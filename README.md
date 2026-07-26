@@ -242,9 +242,15 @@ renders of Korean technical standards:
 - **Flattened hierarchy.** 852 of the 866 files use one heading level for
   everything, from the title down to clause `11.14`; the nesting lives in the
   *numbering*. When a file's heading levels are uniform, dokey derives levels
-  from the numbering (`5.` encloses `5.1`) and splits at the same depth the PDF
-  outline path uses. `--outline-max-level 2` keeps the decimal clauses as their
-  own sections; the default folds them into the clause they belong to.
+  from the numbering — but *which* numbering series encloses which is the
+  document's own convention, not something dokey can assume. It is read off
+  each document by counting containment: two consecutive `(1)`/`(2)` items
+  bracket one item, so whatever appears between them is nested inside it. The
+  conventional order (`1.` → `4.1` → `(1)` → `(가)` → `①`) is only a prior, used
+  where a document says nothing; 85% of rungs across the corpus are decided by
+  the document itself, and 37 of 850 documents order their series differently
+  from the convention. `--outline-max-level` fixes the split depth; left unset,
+  dokey descends the ladder until the sections are of citable size.
 - **Page furniture as body text.** A running header is text on the page like
   any other, and it lands wherever the page broke — mid-paragraph, or split
   across five lines. dokey drops a short line that recurs three times or more

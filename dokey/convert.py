@@ -39,11 +39,13 @@ ingests today, but the JSON is what a citation-grade pipeline should consume.
 from __future__ import annotations
 
 import importlib.util
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
+from hashlib import sha1
 from pathlib import Path
 
 from . import backends as backendslib
@@ -243,6 +245,30 @@ def build_command(
     return command
 
 
+def _ascii_staged(input_path: Path) -> Path:
+    """Give the converter an ASCII path, copying the file if it does not have one.
+
+    Docling's parser fails to open a document whose path carries non-ASCII
+    characters on Windows -- the name reaches its C++ layer mangled, and the
+    conversion dies with "Failed to load document" on a file that is perfectly
+    readable. Every Korean filename hits this, so the seam stages a copy under
+    a safe name rather than pass the problem on. The lake still records the
+    original file; only the converter sees the stand-in.
+    """
+    if str(input_path.resolve()).isascii():
+        return input_path
+    stage = Path(tempfile.mkdtemp(prefix="dokey_source_"))
+    # slugify keeps Unicode on purpose (a Korean section keeps a readable
+    # folder name); here the opposite is needed, so the name is reduced to
+    # ASCII and falls back to a digest when nothing readable survives.
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", input_path.stem).strip("._-")
+    if not safe:
+        safe = "source_" + sha1(input_path.name.encode("utf-8")).hexdigest()[:10]
+    staged = stage / f"{safe}{input_path.suffix}"
+    shutil.copy2(input_path, staged)
+    return staged
+
+
 def convert(
     input_path: Path,
     converter: Converter,
@@ -265,9 +291,10 @@ def convert(
         raise SystemExit(f"File not found: {input_path}")
     out_dir = work_dir or Path(tempfile.mkdtemp(prefix="dokey_convert_"))
     out_dir.mkdir(parents=True, exist_ok=True)
+    source = _ascii_staged(input_path)
     command = build_command(
         converter,
-        input_path,
+        source,
         out_dir,
         to=to,
         ocr=ocr,
@@ -278,7 +305,17 @@ def convert(
         extra=extra,
     )
     try:
-        proc = runner(command, capture_output=True, text=True, timeout=timeout)
+        # The converter's own log is not the product, and on Windows it arrives
+        # in the console codepage: a Korean filename in a progress line decoded
+        # strictly would fail the conversion after it had already succeeded.
+        proc = runner(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+        )
     except FileNotFoundError as exc:
         raise SystemExit(
             f"Could not run the converter ({converter.display()}): {exc}"
@@ -290,6 +327,7 @@ def convert(
         ) from exc
 
     produced = sorted(out_dir.glob(f"*{OUTPUT_SUFFIXES[to]}"))
+    stem = source.stem
     if getattr(proc, "returncode", 1) != 0 or not produced:
         detail = (getattr(proc, "stderr", "") or getattr(proc, "stdout", "") or "").strip()
         raise SystemExit(
@@ -299,7 +337,7 @@ def convert(
     # A directory input yields several files; a single input yields one, and the
     # converter names it after the source stem.
     for candidate in produced:
-        if candidate.stem == input_path.stem:
+        if candidate.stem == stem:
             return candidate
     return produced[0]
 

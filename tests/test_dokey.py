@@ -15,6 +15,7 @@ from dokey import backends as backendslib
 from dokey import convert as convertlib
 from dokey import folios as folioslib
 from dokey import i18n as i18nlib
+from dokey import ladder as ladderlib
 from dokey import mdunit
 from dokey import ocr as ocrlib
 from dokey import paths as pathslib
@@ -958,6 +959,55 @@ class ConverterSeamTests(unittest.TestCase):
                     runner=runner,
                 )
             self.assertIn("no backend for pdf", str(caught.exception))
+
+    def test_a_non_ascii_filename_is_staged_before_conversion(self) -> None:
+        # Docling's parser cannot open a path with non-ASCII characters on
+        # Windows -- a Korean filename dies with "Failed to load document" on a
+        # file that reads fine -- so the seam hands it an ASCII stand-in.
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "규정-비상사태관리.pdf"
+            source.write_bytes(b"%PDF-1.4\n")
+            seen: dict[str, str] = {}
+
+            def runner(command, **kwargs):
+                given = Path(command[command.index("convert") + 1])
+                seen["path"] = str(given)
+                out = Path(command[command.index("--output") + 1])
+                out.mkdir(parents=True, exist_ok=True)
+                (out / f"{given.stem}.md").write_text("# ok\n", encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            produced = convertlib.convert(
+                source,
+                convertlib.Converter(("docling",)),
+                work_dir=Path(tmp) / "out",
+                runner=runner,
+            )
+            self.assertTrue(seen["path"].isascii(), seen["path"])
+            self.assertEqual(produced.read_text(encoding="utf-8"), "# ok\n")
+
+    def test_converter_log_in_another_encoding_does_not_fail_the_run(self) -> None:
+        # The child writes its log in the console codepage; decoding it
+        # strictly would fail a conversion that already succeeded.
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "book.pdf"
+            source.write_bytes(b"%PDF-1.4\n")
+            captured: dict[str, object] = {}
+
+            def runner(command, **kwargs):
+                captured.update(kwargs)
+                out = Path(command[command.index("--output") + 1])
+                out.mkdir(parents=True, exist_ok=True)
+                (out / "book.md").write_text("# ok\n", encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            convertlib.convert(
+                source,
+                convertlib.Converter(("docling",)),
+                work_dir=Path(tmp) / "out",
+                runner=runner,
+            )
+            self.assertEqual(captured.get("errors"), "replace")
 
     def test_saved_converter_wins_over_discovery(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2212,6 +2262,101 @@ CLAUSE_BODY = """\
 """
 
 
+class LadderInductionTests(unittest.TestCase):
+    """The nesting order is read from the document, not assumed.
+
+    Measured across the 866-document corpus the fixed order was fitted to,
+    1,241 of 9,159 observed series pairs contradict it -- 138 documents put
+    circled numerals above (가), and about 200 nest an appendix inside the
+    clauses. So the order has to come from the document.
+    """
+
+    def induce(self, text: str, profile: str = "ko"):
+        return ladderlib.induce_from_lines(
+            text.splitlines(), profileslib.resolve(profile)
+        )
+
+    def test_the_order_is_read_from_containment(self) -> None:
+        # (1) brackets (가) here, and (가) brackets ①, often enough to believe.
+        body = "\n".join(
+            f"(1) 항목 {n}\n(가) 목 하나\n(나) 목 둘\n① 세목\n(2) 다음 항목 {n}\n"
+            for n in range(1, 5)
+        )
+        ladder = self.induce(body)
+        self.assertLess(ladder.rank["paren_num"], ladder.rank["paren_hangul"])
+        self.assertLess(ladder.rank["paren_hangul"], ladder.rank["circled_num"])
+        self.assertEqual(ladder.source["paren_hangul"], "observed")
+
+    def test_a_document_that_inverts_the_convention_is_followed(self) -> None:
+        # ① above (가) -- the inverse of the conventional ladder, and measured
+        # in 138 documents of the corpus.
+        body = "\n".join(
+            f"① 세목 {n}\n(가) 목 하나\n(나) 목 둘\n② 다음 세목 {n}\n" for n in range(1, 5)
+        )
+        ladder = self.induce(body)
+        self.assertLess(ladder.rank["circled_num"], ladder.rank["paren_hangul"])
+        self.assertEqual(ladder.source["circled_num"], "observed")
+
+    def test_the_prior_only_fills_what_the_document_does_not_say(self) -> None:
+        ladder = self.induce("(1) 하나뿐인 항목입니다.\n(가) 목 하나뿐입니다.\n")
+        self.assertLess(ladder.rank["paren_num"], ladder.rank["paren_hangul"])
+        self.assertEqual(ladder.source["paren_num"], "prior")
+
+    def test_a_decimal_keeps_its_own_arity(self) -> None:
+        ladder = self.induce("1. 절\n1.1 소절\n1.1.2 더 깊은 소절\n")
+        korean = profileslib.resolve("ko")
+        self.assertEqual(ladder.depth(korean.numbering("1. 절")), 1)
+        self.assertEqual(ladder.depth(korean.numbering("1.1 소절")), 2)
+        self.assertEqual(ladder.depth(korean.numbering("1.1.2 더 깊은")), 3)
+
+    def test_a_list_whose_numbers_never_advance_is_not_a_clause_series(self) -> None:
+        # Auto-numbering that failed to resolve renders every item as "0."
+        # (measured in a corporate regulation). The items are real; the
+        # ordinals are not.
+        body = (
+            "1. 적용범위\n본문.\n2. 목적\n본문.\n3. 용어의 정의\n"
+            "3.1 비상사태\n0. 중대재해\n0. 중대산업사고\n0. 화재/폭발\n0. 운송사고\n"
+        )
+        ladder = self.induce(body)
+        korean = profileslib.resolve("ko")
+        zero = korean.numbering("0. 중대재해")
+        clause = korean.numbering("1. 적용범위")
+        self.assertEqual(ladder.kind_of(zero), ladderlib.UNORDERED)
+        self.assertEqual(ladder.kind_of(clause), "integer")
+        self.assertGreater(ladder.depth(zero), ladder.depth(clause))
+
+    def test_a_lone_clause_zero_is_left_alone(self) -> None:
+        # A standard that opens with clause 0 (an introduction) means it.
+        ladder = self.induce("0. 서론\n본문.\n1. 적용범위\n본문.\n2. 목적\n본문.\n")
+        korean = profileslib.resolve("ko")
+        self.assertEqual(ladder.kind_of(korean.numbering("0. 서론")), "integer")
+
+    def test_a_contradictory_document_still_ranks_the_same_way_twice(self) -> None:
+        # A series reused at two depths puts a cycle in the evidence, and the
+        # cycle is broken at its weakest edge -- by count, then by name, so the
+        # same document never ranks two different ways.
+        body = "\n".join(
+            f"(1) 항목 {n}\n(가) 목\n(2) 항목 {n}b\n(가) 목\n(나) 상위 목 {n}\n(1) 안쪽 항목\n(2) 안쪽 항목\n(다) 상위 목 {n}b\n"
+            for n in range(1, 4)
+        )
+        first = self.induce(body)
+        second = self.induce(body)
+        self.assertEqual(first.order, second.order)
+        self.assertEqual(first.rank, second.rank)
+
+    def test_an_unordered_item_is_addressed_by_position(self) -> None:
+        body = "0. 첫째 항목\n0. 둘째 항목\n0. 셋째 항목\n"
+        korean = profileslib.resolve("ko")
+        ladder = ladderlib.induce_from_lines(body.splitlines(), korean)
+        items = pathslib.segment(body, root="3.1", profile=korean, ladder=ladder)
+        self.assertEqual(
+            [item.address for item in items],
+            # an integer label is its digits, as everywhere else in an address
+            ["3.1 0(1)", "3.1 0(2)", "3.1 0(3)"],
+        )
+        self.assertTrue(all(not item.ordered for item in items))
+
+
 class AddressLadderTests(unittest.TestCase):
     """Cutting a section along the numbering ladder it addresses itself by."""
 
@@ -2260,14 +2405,29 @@ class AddressLadderTests(unittest.TestCase):
             )
 
     def test_a_skipped_rung_is_counted_not_invented(self) -> None:
-        # 4.1 straight to (가): the document skipped (1), and dokey does not
-        # put text at an address the document never used.
-        body = "## 4.1 개요\n\n(가) 첫 항목입니다.\n"
+        # This document does use (1), so jumping from 4.2 straight to (가)
+        # skips a rung of its own ladder.
+        body = (
+            "## 4.1 개요\n\n(1) 첫 항목.\n\n(가) 세부 사항.\n\n(2) 둘째 항목.\n\n"
+            "## 4.2 다음\n\n(가) 바로 목으로 간다.\n"
+        )
         items, report = self.segment(body, root="4.")
-        addresses = [item.address for item in items]
-        self.assertEqual(addresses, ["4. 4.1", "4. 4.1 (가)"])
+        jumped = [item for item in items if item.address == "4. 4.2 (가)"]
+        self.assertEqual(len(jumped), 1)
+        self.assertEqual(jumped[0].skipped, 1)
         self.assertEqual(report.skipped_rungs, 1)
-        self.assertEqual([i for i in items if i.label == "(가)"][0].skipped, 1)
+
+    def test_a_rung_the_document_never_uses_is_not_a_gap(self) -> None:
+        # No (1) anywhere: (가) simply is the rung below 4.1 in this document,
+        # and counting a gap against a ladder it does not follow would be
+        # counting against a convention, not against the document.
+        body = "## 4.1 개요\n\n(가) 첫 항목입니다.\n\n(나) 둘째 항목입니다.\n"
+        items, report = self.segment(body, root="4.")
+        self.assertEqual(
+            [item.address for item in items],
+            ["4. 4.1", "4. 4.1 (가)", "4. 4.1 (나)"],
+        )
+        self.assertEqual(report.skipped_rungs, 0)
 
     def test_an_off_ladder_series_is_kept_and_marked(self) -> None:
         body = "1) 첫째 항목.\n\n2) 둘째 항목.\n"

@@ -40,9 +40,11 @@ this module only walks it.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import ladder as ladderlib
 from . import profiles as profileslib
 
 # A folded subheading still carries its marker in the body ("## 5.1 …"); the
@@ -74,10 +76,19 @@ class Item:
     char_own_end: int
     irregular: bool = False
     skipped: int = 0  # rungs the document jumped over to reach this one
+    ordered: bool = True  # False when the document's own ordinal never advances
+    sequence: int = 1  # position among siblings, which is all an unordered item has
 
     @property
     def address(self) -> str:
-        return " ".join(self.path)
+        # An unordered item carries no number of its own -- an auto-numbered
+        # list whose field never resolved renders every item as "0." -- so it
+        # is addressed by position, marked as position rather than passed off
+        # as the document's own numbering.
+        parts = list(self.path)
+        if parts and not self.ordered:
+            parts[-1] = f"{parts[-1]}({self.sequence})"
+        return " ".join(parts)
 
 
 @dataclass
@@ -106,6 +117,9 @@ class _Open:
     own_end: int | None  # where its own words stop and its first child begins
     irregular: bool
     skipped: int
+    ordered: bool
+    sequence: int
+    children: Counter = field(default_factory=Counter)
 
 
 def segment(
@@ -113,6 +127,7 @@ def segment(
     *,
     root: str | None = None,
     profile=None,
+    ladder=None,
     report: SegmentReport | None = None,
 ) -> list[Item]:
     """Cut one section body into addressed items.
@@ -124,8 +139,12 @@ def segment(
     clause carries directly.
     """
     active = profile or profileslib.NEUTRAL
+    rungs = ladder if ladder is not None else ladderlib.induce_from_lines(
+        body.splitlines(), active
+    )
     tally = report if report is not None else SegmentReport()
     lines = body.splitlines(keepends=True)
+    root_children: Counter = Counter()
     stack: list[_Open] = []
     items: list[Item] = []
     offset = 0
@@ -149,6 +168,8 @@ def segment(
                     char_own_end=own_end,
                     irregular=open_item.irregular,
                     skipped=open_item.skipped,
+                    ordered=open_item.ordered,
+                    sequence=open_item.sequence,
                 )
             )
 
@@ -162,28 +183,39 @@ def segment(
                 preamble += len(line)
             offset += len(line)
             continue
-        depth = numbering.depth
+        depth = rungs.depth(numbering)
+        ordered = rungs.kind_of(numbering) != ladderlib.UNORDERED
         close(depth, offset)
         # The section's own number occupies the first rung, so an item one rung
         # below it (4. -> 4.1) has skipped nothing.
         held = stack[-1].depth if stack else (1 if root is not None else 0)
-        skipped = max(0, depth - held - 1)
+        # A gap counts only against rungs this document actually uses. Jumping
+        # 4.1 -> (가) in a document with no (1) skips nothing: the document's
+        # ladder has no rung there to skip.
+        occupied = {rung for rung in rungs.rank.values() if held < rung < depth}
+        skipped = len(occupied)
         if skipped:
             tally.skipped_rungs += skipped
         if stack and stack[-1].own_end is None:
             stack[-1].own_end = offset
+        label = numbering.label.strip()
+        siblings = stack[-1].children if stack else root_children
+        siblings[label] += 1
         stack.append(
             _Open(
-                label=numbering.label.strip(),
+                label=label,
                 depth=depth,
                 start=offset,
                 own_end=None,
-                irregular=numbering.irregular,
+                irregular=numbering.irregular or not ordered,
                 skipped=skipped,
+                ordered=ordered,
+                sequence=siblings[label],
             )
         )
         tally.items += 1
-        tally.series[numbering.kind] = tally.series.get(numbering.kind, 0) + 1
+        kind = rungs.kind_of(numbering)
+        tally.series[kind] = tally.series.get(kind, 0) + 1
         if numbering.irregular:
             tally.irregular += 1
         offset += len(line)
@@ -194,7 +226,9 @@ def segment(
     return items
 
 
-def segment_sections(sections, *, profile=None, report: SegmentReport | None = None):
+def segment_sections(
+    sections, *, profile=None, ladder=None, report: SegmentReport | None = None
+):
     """Address every section of a document, yielding ``(section, items)``.
 
     The section's own numbering becomes the root rung, so an item's address is
@@ -208,7 +242,7 @@ def segment_sections(sections, *, profile=None, report: SegmentReport | None = N
         numbering = active.numbering(section.title)
         root = numbering.label.strip() if numbering is not None else None
         yield section, segment(
-            section.body, root=root, profile=active, report=tally
+            section.body, root=root, profile=active, ladder=ladder, report=tally
         )
 
 

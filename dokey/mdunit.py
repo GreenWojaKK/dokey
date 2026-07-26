@@ -46,10 +46,12 @@ from __future__ import annotations
 
 import difflib
 import re
+import statistics
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import ladder as ladderlib
 from . import profiles as profileslib
 from .models import SectionRange, TocEntry
 from .names import ArtifactNamer
@@ -89,6 +91,13 @@ ECHO_MIN_RATIO = 0.85
 # Short titles collide by accident ("개요", "비고"); only titles long enough to
 # be distinctive are compared.
 ECHO_MIN_CHARS = 8
+# A section is something a reader cites, so it has to be a size a reader can
+# hold. Splitting at the document's top rung assumes that rung is the clause --
+# true for a plain standard, false for a compilation, where the top rung is an
+# annex and one "section" came out at 42,000 characters. So when no depth is
+# asked for, dokey descends the ladder until the pieces are of citable size.
+# The corpus median section is ~520 characters; this ceiling is generous.
+SECTION_TARGET_CHARS = 4000
 
 
 @dataclass(frozen=True)
@@ -123,6 +132,7 @@ class UnitizeReport:
     title_echoes_demoted: int = 0
     empty_headings_demoted: int = 0
     echoes: list = field(default_factory=list)
+    ladder: dict = field(default_factory=dict)
     furniture_tables_dropped: int = 0
     notes: list[str] = field(default_factory=list)
 
@@ -147,6 +157,7 @@ class UnitizeReport:
                 {"echo": echo, "of": first} for echo, first in self.echoes[:20]
             ],
             "empty_headings_demoted": self.empty_headings_demoted,
+            "ladder": self.ladder,
             "furniture_tables_dropped": self.furniture_tables_dropped,
             "known_defects": list(self.notes),
         }
@@ -154,7 +165,8 @@ class UnitizeReport:
     def summary(self) -> str:
         parts = [f"{self.sections} sections from {self.headings} headings"]
         if self.derived_levels:
-            parts.append(f"levels derived from numbering (max {self.max_level})")
+            order = " > ".join(self.ladder.get("order", ())) or "none"
+            parts.append(f"levels from the document's ladder [{order}] (max {self.max_level})")
         if self.subheadings_folded:
             parts.append(f"{self.subheadings_folded} subheadings folded into parents")
         if self.running_mark_lines:
@@ -179,6 +191,7 @@ class UnitizeResult:
     sections: list[Section]
     report: UnitizeReport
     outline: list[TocEntry] = field(default_factory=list)
+    ladder: object | None = None
 
 
 def is_markdown(path: Path) -> bool:
@@ -222,6 +235,7 @@ class _Head:
     atx_level: int
     title: str
     numbering: object | None = None
+    addressed: bool = False  # numbered *and* the number advances
     level: int = 1
     verdict: str = "section"  # section | running_mark | repeat | fragment | folded
 
@@ -459,7 +473,7 @@ def _furniture_tables(scan: _Scan, keys: set[str], profile) -> tuple[set[int], i
     return dropped, tables
 
 
-def _assign_levels(heads: list[_Head], profile) -> bool:
+def _assign_levels(heads: list[_Head], ladder) -> bool:
     """Give every kept heading a hierarchy level; say whether it was derived.
 
     When the file uses more than one heading level, that is the author's own
@@ -471,8 +485,6 @@ def _assign_levels(heads: list[_Head], profile) -> bool:
     level while an unnumbered subheading sits under its clause.
     """
     kept = [head for head in heads if head.verdict == "section"]
-    for head in kept:
-        head.numbering = profile.numbering(head.title)
     derived = len({head.atx_level for head in kept}) <= 1 and len(kept) > 1
     if not derived:
         for head in kept:
@@ -480,8 +492,8 @@ def _assign_levels(heads: list[_Head], profile) -> bool:
         return False
     last_numbered = 0
     for head in kept:
-        if head.numbering is not None:
-            head.level = min(head.numbering.depth, 6)
+        if head.addressed:
+            head.level = min(ladder.depth(head.numbering), 6)
             last_numbered = head.level
         else:
             head.level = min(last_numbered + 1, 6) if last_numbered else 1
@@ -509,8 +521,7 @@ def _demote_headings(heads: list[_Head], mark_keys: set[str], profile, report) -
     first_seen: dict[str, int] = {}
     for position, head in enumerate(heads):
         key = keys[position]
-        head.numbering = profile.numbering(head.title)
-        if head.numbering is None:
+        if not head.addressed:
             if key in mark_keys:
                 head.verdict = "running_mark"
                 report.running_marks[head.title.strip()] += 1
@@ -557,7 +568,7 @@ def _demote_interrupting_fragments(
     """
     kept = [head for head in scan.heads if head.verdict == "section"]
     for position, head in enumerate(kept):
-        if head.numbering is not None or _ITEM_MARKER.match(head.title):
+        if head.addressed or _ITEM_MARKER.match(head.title):
             continue
         if position == 0 or position + 1 >= len(kept):
             continue
@@ -590,7 +601,7 @@ def _rejoin_split_titles(scan: _Scan, drop_lines: set[int], profile, report) -> 
     for previous, head in zip(scan.heads, scan.heads[1:]):
         if head.verdict not in joinable or previous.verdict not in joinable:
             continue
-        if head.numbering is not None:
+        if head.addressed:
             continue
         # A bare label names something that has not been named yet: "<별표 1>"
         # on one line, "소화기구의 소화약제별 적응성" on the next, then the table.
@@ -627,7 +638,7 @@ def _rejoin_split_titles(scan: _Scan, drop_lines: set[int], profile, report) -> 
         # clause title ending on "및" is a truncation, not a sentence -- so the
         # whole title gets its status back.
         if previous.verdict == "fragment" and (
-            previous.numbering is not None
+            previous.addressed
             or not profile.is_sentence_tail(previous.title)
         ):
             previous.verdict = "section"
@@ -636,6 +647,46 @@ def _rejoin_split_titles(scan: _Scan, drop_lines: set[int], profile, report) -> 
 
 def _title_echo_ratio(left: str, right: str) -> float:
     return difflib.SequenceMatcher(None, left, right).ratio()
+
+
+def _choose_max_level(scan: _Scan, lengths: dict[int, list[int]]) -> int:
+    """How deep to split when the caller did not say.
+
+    Descend one rung at a time while the sections a rung yields are too large
+    to cite, and stop at the shallowest rung that is small enough -- or at the
+    deepest the document offers, when none is.
+    """
+    for depth in sorted(lengths):
+        sizes = lengths[depth]
+        if not sizes:
+            continue
+        if statistics.median(sizes) <= SECTION_TARGET_CHARS:
+            return depth
+    return max(lengths) if lengths else 1
+
+
+def _section_sizes(scan: _Scan, drop_lines: set[int]) -> dict[int, list[int]]:
+    """Characters each candidate depth would put in a section."""
+    offsets: list[int] = []
+    running = 0
+    for line in scan.lines:
+        offsets.append(running)
+        running += len(line) + 1
+    heads = [head for head in scan.heads if head.verdict == "section"]
+    if not heads:
+        return {}
+    depths = sorted({head.level for head in heads})
+    sizes: dict[int, list[int]] = {}
+    for depth in depths:
+        starts = [head.line for head in heads if head.level <= depth]
+        if not starts:
+            continue
+        bounds = starts + [len(scan.lines)]
+        sizes[depth] = [
+            offsets[end] - offsets[start] if end < len(offsets) else running - offsets[start]
+            for start, end in zip(bounds, bounds[1:])
+        ]
+    return sizes
 
 
 def _demote_title_echoes(scan: _Scan, profile, report) -> None:
@@ -663,13 +714,13 @@ def _demote_title_echoes(scan: _Scan, profile, report) -> None:
     # (``<부록 4> 하중계 설치방법…`` / ``<부록 1> 지중경사계 설치방법…``) are 90%
     # alike and are two different appendices.
     document = survivors[0]
-    if document.numbering is not None:
+    if document.addressed:
         return  # a numbered first heading is a clause, not a title page
     title_key = profile.key(document.title)
     if len(title_key) < ECHO_MIN_CHARS:
         return
     for head in survivors[1:]:
-        if head.numbering is not None:
+        if head.addressed:
             continue
         key = profile.key(head.title)
         if len(key) < ECHO_MIN_CHARS:
@@ -698,7 +749,7 @@ def _demote_empty_headings(scan: _Scan, drop_lines: set[int], profile, report) -
         changed = False
         starts = [head for head in scan.heads if head.verdict == "section"]
         for position, head in enumerate(starts):
-            if head.numbering is not None:
+            if head.addressed:
                 continue
             end = (
                 starts[position + 1].line
@@ -754,6 +805,16 @@ def unitize(
     scan = _scan(markdown)
     report.headings = len(scan.heads)
 
+    # Which series encloses which is the document's own convention, so it is
+    # read off the document before anything is decided by it.
+    ladder = ladderlib.induce_from_lines(scan.lines, active)
+    report.ladder = ladder.as_dict()
+    for head in scan.heads:
+        head.numbering = active.numbering(head.title)
+        head.addressed = head.numbering is not None and (
+            ladder.kind_of(head.numbering) != ladderlib.UNORDERED
+        )
+
     mark_keys = _running_mark_keys(scan, active)
     drop_lines, dropped_marks = _furniture_lines(scan, mark_keys, active)
     table_lines, table_count = _furniture_tables(scan, mark_keys, active)
@@ -772,10 +833,15 @@ def unitize(
     # document, not against its neighbours, before any of them becomes a section.
     _demote_title_echoes(scan, active, report)
     _demote_empty_headings(scan, drop_lines, active, report)
-    derived = _assign_levels(scan.heads, active)
+    derived = _assign_levels(scan.heads, ladder)
     report.derived_levels = derived
 
-    effective_max = max_level if max_level is not None else (1 if derived else None)
+    if max_level is not None:
+        effective_max = max_level
+    elif derived:
+        effective_max = _choose_max_level(scan, _section_sizes(scan, drop_lines))
+    else:
+        effective_max = None
     report.max_level = effective_max
     if effective_max is not None:
         for head in scan.heads:
@@ -794,7 +860,7 @@ def unitize(
             "no headings found; the whole document is one section "
             "(the renderer may not have marked headings)"
         )
-    return UnitizeResult(sections, report, derive_outline(sections))
+    return UnitizeResult(sections, report, derive_outline(sections), ladder)
 
 
 def _body_line(scan: _Scan, head: _Head) -> str:

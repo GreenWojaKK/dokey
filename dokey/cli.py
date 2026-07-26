@@ -1139,7 +1139,9 @@ def _write_section_pages(sections: list, output_dir: Path) -> Path:
     return pages_path
 
 
-def _write_addressed_items(sections: list, output_dir: Path, *, profile: str):
+def _write_addressed_items(
+    sections: list, output_dir: Path, *, profile: str, ladder=None
+):
     """Cut every section along the document's numbering ladder and record it.
 
     The section is the unit a reader cites; the *item* is the unit the document
@@ -1152,7 +1154,7 @@ def _write_addressed_items(sections: list, output_dir: Path, *, profile: str):
     report = pathslib.SegmentReport()
     rows: list[dict] = []
     for section, items in pathslib.segment_sections(
-        sections, profile=active, report=report
+        sections, profile=active, ladder=ladder, report=report
     ):
         for item in items:
             rows.append(
@@ -1164,6 +1166,8 @@ def _write_addressed_items(sections: list, output_dir: Path, *, profile: str):
                     "label": item.label,
                     "depth": item.depth,
                     "irregular": item.irregular,
+                    "ordered": item.ordered,
+                    "sequence": item.sequence,
                     "skipped": item.skipped,
                     "char_start": item.char_start,
                     "char_end": item.char_end,
@@ -1248,7 +1252,7 @@ def _ingest_markdown(
 
     if write_items:
         items_path, segment_report = _write_addressed_items(
-            sections, output_dir, profile=profile
+            sections, output_dir, profile=profile, ladder=result.ladder
         )
         print(
             f"Wrote addressed items: {items_path} "

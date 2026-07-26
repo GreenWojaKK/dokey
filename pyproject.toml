@@ -1,0 +1,45 @@
+[project]
+name = "dokey"
+version = "0.1.0"
+description = "Book and booklet PDF unitizer for document lake and RAG ingestion pipelines."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "pypdf>=6.0",
+]
+
+[project.optional-dependencies]
+ui = [
+  "streamlit>=1.33",
+]
+ocr = [
+  "pymupdf>=1.24",
+]
+# Layout conversion for scanned or layout-heavy PDFs. dokey never imports
+# docling -- it runs it as a separate process -- so this extra is a convenience
+# for installing the reference converter into the same environment, nothing
+# more. It is heavy (torch, transformers, onnxruntime); a `docling` already on
+# PATH works identically without it.
+docling = [
+  "docling>=2.115",
+]
+app = [
+  "streamlit>=1.33",
+  "pywebview>=5.0",
+]
+
+[project.scripts]
+dokey = "dokey.cli:main"
+
+[project.gui-scripts]
+dokey-app = "dokey.cli:main_app"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["dokey", "dokey.profiles"]
+
+[tool.setuptools.package-data]
+dokey = ["assets/*"]

@@ -1,0 +1,53 @@
+# --- Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.coverage
+htmlcov/
+.venv/
+build/
+dist/
+*.egg-info/
+
+# --- 자격 증명·환경 (한 번 들어가면 이력에서 지우기 어렵다)
+.env
+.env.*
+*.pem
+*.key
+credentials.json
+
+# --- 편집기·에이전트 로컬 상태 (작업 지시서 .claude/ 포함)
+.claude/
+.agents/
+.idea/
+.vscode/
+.obsidian/
+.streamlit/
+
+# --- OS 부스러기
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- dokey 산출물: 레이크는 전부 파생물이라 재적재로 되살아난다
+dokey_out/
+split_pdfs/
+tmp/
+*.log
+*.db
+*.sqlite3
+
+# --- 대용량·저작권 자료
+*.pdf
+
+# --- 입력 문서 드롭존
+# 넣어 둔 원본과 변환 결과는 저장소에 담지 않고, 코퍼스를 설명하는 README만
+# 남긴다. 디렉터리째 무시하면 git이 그 안으로 내려가지 않아 예외가 먹지 않으므로
+# 내용물만 무시한다 (`!input/*/`가 디렉터리를 되살려 아래 예외가 성립).
+input/*
+!input/*/
+input/*/*
+!input/*/README.md

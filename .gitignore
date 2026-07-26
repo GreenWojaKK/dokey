@@ -19,13 +19,33 @@ dist/
 *.key
 credentials.json
 
-# --- 편집기·에이전트 로컬 상태 (작업 지시서 .claude/ 포함)
-.claude/
-.agents/
+# --- 편집기 로컬 상태
 .idea/
 .vscode/
 .obsidian/
 .streamlit/
+
+# --- 코딩 에이전트 일체 (지시서·설정·세션 기록)
+# 방침: 에이전트가 남기는 것은 저장소에 넣지 않는다. 작업 맥락이지 산출물이
+# 아니고, 도구마다 형식이 달라 저장소를 특정 도구에 묶는다. 새 도구를 쓰게 되면
+# 그 흔적을 여기 추가할 것. (단 .github/는 CI라 추적한다.)
+.claude/
+.agents/
+.codex/
+.cursor/
+.cursorrules
+.windsurf/
+.continue/
+.aider*
+.roo/
+.cline/
+.gemini/
+.junie/
+.qodo/
+.mcp.json
+AGENTS.md
+CLAUDE.md
+GEMINI.md
 
 # --- OS 부스러기
 .DS_Store

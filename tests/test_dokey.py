@@ -12,6 +12,7 @@ from pathlib import Path
 from pypdf import PdfReader, PdfWriter
 
 from dokey import backends as backendslib
+from dokey import blocks as blockslib
 from dokey import bodytoc
 from dokey import convert as convertlib
 from dokey import folios as folioslib
@@ -2261,6 +2262,81 @@ CLAUSE_BODY = """\
 
 (2) 그 밖의 용어는 관계 법령에 따른다.
 """
+
+
+class SourceBlockPageTests(unittest.TestCase):
+    """Pages taken from the stream a render came from, not invented."""
+
+    def blocks(self, rows) -> list:
+        return [
+            blockslib.Block(page=page, label=label, layer=layer, text=text)
+            for page, label, layer, text in rows
+        ]
+
+    SOURCE = [
+        (1, "section_header", "body", "트랙터 안전 운전에 관한 기술지침"),
+        (1, "text", "body", "2013. 11."),
+        (2, "page_header", "furniture", "KOSHA GUIDE"),
+        (2, "section_header", "body", "1. 목 적"),
+        (2, "text", "body", "이 지침은 트랙터의 안전 운전을 다룬다."),
+        (3, "text", "body", "KOSHA GUIDE"),  # the same mark, labelled body here
+        (3, "text", "body", "계속되는 본문."),
+        (4, "text", "body", "KOSHA GUIDE"),
+        (4, "section_header", "body", "2. 적용범위"),
+        (5, "text", "body", "이 지침은 농업에 적용한다."),
+    ]
+
+    def sections(self, titles):
+        return [
+            mdunit.Section(index, 1, title, title, "")
+            for index, title in enumerate(titles, start=1)
+        ]
+
+    def test_a_section_takes_the_pages_it_occupies(self) -> None:
+        report = blockslib.PageReport()
+        ranges = blockslib.locate_sections(
+            self.sections(["트랙터 안전 운전에 관한 기술지침", "1. 목 적", "2. 적용범위"]),
+            self.blocks(self.SOURCE),
+            report,
+        )
+        self.assertEqual(ranges, [(1, 1), (2, 3), (4, 5)])
+        self.assertEqual(report.located, 3)
+        self.assertEqual(report.interpolated, 0)
+        self.assertEqual(report.pages, 5)
+
+    def test_a_repaired_title_still_finds_its_block(self) -> None:
+        # dokey rejoins "1. 목" + "적" into "1. 목적"; the block still says
+        # "1. 목 적", and a title matching the start of a block is the block.
+        ranges = blockslib.locate_sections(
+            self.sections(["1. 목적"]), self.blocks(self.SOURCE)
+        )
+        self.assertEqual(ranges[0][0], 2)
+
+    def test_a_section_that_cannot_be_found_is_counted_not_hidden(self) -> None:
+        report = blockslib.PageReport()
+        blockslib.locate_sections(
+            self.sections(["1. 목 적", "없는 절 제목입니다"]),
+            self.blocks(self.SOURCE),
+            report,
+        )
+        self.assertEqual(report.interpolated, 1)
+        self.assertTrue(report.notes)
+
+    def test_page_text_drops_the_running_mark_whatever_its_label(self) -> None:
+        # The converter called it furniture on page 2 and body on pages 3-4;
+        # recurrence across the document settles it.
+        rows = blockslib.page_texts(self.blocks(self.SOURCE))
+        self.assertEqual([row["page"] for row in rows], [1, 2, 3, 4, 5])
+        self.assertFalse(any("KOSHA GUIDE" in row["text"] for row in rows))
+        self.assertIn("이 지침은 트랙터의", rows[1]["text"])
+
+    def test_a_block_stream_beside_the_render_is_found(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            render = Path(tmp) / "doc.md"
+            render.write_text("# x\n", encoding="utf-8")
+            self.assertIsNone(blockslib.find_source_blocks(render))
+            (Path(tmp) / "doc.json").write_text('{"texts": []}', encoding="utf-8")
+            self.assertEqual(blockslib.find_source_blocks(render).name, "doc.json")
 
 
 class BodyDerivedTocTests(unittest.TestCase):

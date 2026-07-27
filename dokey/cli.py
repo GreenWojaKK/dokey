@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 from . import backends as backendslib
+from . import blocks as blockslib
 from . import bodytoc
 from . import convert as convertlib
 from . import detect as detectlib
@@ -88,6 +89,16 @@ def build_parser() -> argparse.ArgumentParser:
             "Deepest level to split from: PDF outline levels, or -- for a "
             "Markdown input whose heading levels are uniform -- the depth of "
             "the numbering (5.1 is level 2). Default: 1."
+        ),
+    )
+    auto.add_argument(
+        "--blocks",
+        type=Path,
+        default=None,
+        help=(
+            "Block stream (DoclingDocument JSON) the Markdown was rendered "
+            "from, so sections take the pages they really occupy. Default: a "
+            "<name>.json beside the input, when there is one."
         ),
     )
     auto.add_argument(
@@ -234,6 +245,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Section depth for the converted Markdown (see `dokey auto`). Default: 1.",
+    )
+    convert.add_argument(
+        "--blocks",
+        type=Path,
+        default=None,
+        help=(
+            "Block stream (DoclingDocument JSON) the Markdown was rendered "
+            "from, so sections take the pages they really occupy. Default: a "
+            "<name>.json beside the input, when there is one."
+        ),
     )
     convert.add_argument(
         "--no-items",
@@ -1002,11 +1023,14 @@ def run_auto(args: argparse.Namespace) -> None:
                 "  python -m pip install -e .[ocr]\n"
                 "or supply a TOC file via `dokey ingest --toc ...`."
             )
-        endpoint, _ = backendslib.resolve_endpoint(args.ocr_endpoint)
-        ocr_client = ocrlib.OcrClient(endpoint, max_tokens=2048)
         try:
+            # The text layer first, and without the OCR fallback: OCR renders
+            # every page of the front matter and calls a model per page, which
+            # is minutes of work on a document whose own text is right there.
+            # Measured on a 7-page rule: 41 seconds spent failing at OCR,
+            # against 0.01 seconds to read the same structure off the body.
             entries = read_page_toc(
-                input_pdf, toc_pages=args.toc_page, ocr_client=ocr_client
+                input_pdf, toc_pages=args.toc_page, ocr_client=None
             )
             print(f"TOC: {len(entries)} entries from the printed contents page(s)")
         except ValueError as exc:
@@ -1021,16 +1045,34 @@ def run_auto(args: argparse.Namespace) -> None:
                 profile=getattr(args, "profile", "auto"),
                 max_level=_outline_max_level(args),
             )
-            if not entries:
-                raise SystemExit(str(exc)) from exc
-            print(
-                f"TOC: {len(entries)} entries derived from the document's own "
-                "numbered headings (no contents page with page numbers)"
-            )
-            # Derived entries carry the page they were found on, like an
-            # outline's destinations: physical PDF pages, so no offset applies.
-            page_offset = 0 if args.page_offset is None else args.page_offset
-            physical_pages = True
+            if entries:
+                print(
+                    f"TOC: {len(entries)} entries derived from the document's "
+                    "own numbered headings (no contents page with page numbers)"
+                )
+                # Derived entries carry the page they were found on, like an
+                # outline's destinations: physical pages, so no offset applies.
+                page_offset = 0 if args.page_offset is None else args.page_offset
+                physical_pages = True
+            else:
+                # Nothing readable in the text layer at all: now it is worth
+                # paying for OCR, which is what it is for.
+                endpoint, _ = backendslib.resolve_endpoint(args.ocr_endpoint)
+                print(f"No text-layer TOC; trying OCR at {endpoint}")
+                try:
+                    entries = read_page_toc(
+                        input_pdf,
+                        toc_pages=args.toc_page,
+                        ocr_client=ocrlib.OcrClient(endpoint, max_tokens=2048),
+                    )
+                except ValueError:
+                    raise SystemExit(str(exc)) from exc
+                print(
+                    f"TOC: {len(entries)} entries from the printed contents "
+                    "page(s), read by OCR"
+                )
+                # An OCR-read contents page prints the book's own page numbers,
+                # so it takes the offset calibration below like any other.
 
     if not physical_pages:
         # A page offset prior: the flag if given, else the running folios,
@@ -1231,6 +1273,21 @@ def _write_unitize_report(report, output_dir: Path, input_path: Path) -> Path:
     return path
 
 
+def _write_page_texts(rows: list[dict], output_dir: Path) -> Path:
+    """Page text from the source blocks, furniture excluded.
+
+    The blocks say which of them the converter judged furniture, so the text a
+    search index reads is the page's content without the running header -- a
+    distinction the Markdown path has to infer and this one is told.
+    """
+    path = output_dir / "bronze" / "pages.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as output:
+        for row in rows:
+            output.write(json.dumps(row, ensure_ascii=False) + "\n")
+    return path
+
+
 def _write_section_artifacts(sections: list, ranges: list, output_dir: Path) -> None:
     """Per-section Markdown files, the flow-document analogue of the split PDFs."""
     for section, row in zip(sections, ranges):
@@ -1251,6 +1308,7 @@ def _ingest_markdown(
     max_level: int | None = None,
     profile: str = "auto",
     write_items: bool = True,
+    source_blocks: Path | None = None,
 ) -> None:
     """Unitize a Markdown string by heading and write the full lake.
 
@@ -1275,14 +1333,35 @@ def _ingest_markdown(
         )
     print(f"Sections: {result.report.summary()}")
 
-    ranges = mdunit.build_section_ranges(sections, output_dir)
+    # A render has no pages, but the stream it was rendered from does. When it
+    # is there, sections take the pages they actually occupy instead of one
+    # each -- a fifteen-page document stops claiming thirteen one-page sections.
+    pages = None
+    page_report = None
+    if source_blocks is not None:
+        blocks = blockslib.read_blocks(source_blocks)
+        if blocks:
+            page_report = blockslib.PageReport()
+            pages = blockslib.locate_sections(sections, blocks, page_report)
+            print(
+                f"Pages: from {source_blocks.name} "
+                f"({page_report.pages} pages, {page_report.located} sections "
+                f"located, {page_report.interpolated} interpolated)"
+            )
+            result.report.notes.extend(page_report.notes)
+
+    ranges = mdunit.build_section_ranges(sections, output_dir, pages)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     raw_path = copy_raw_pdf(input_path, output_dir)  # copies any file under raw/
     print(f"Wrote raw {source_label}: {raw_path}")
 
-    pages_path = _write_section_pages(sections, output_dir)
-    print(f"Wrote section text: {pages_path}")
+    if pages is not None:
+        pages_path = _write_page_texts(blockslib.page_texts(blocks), output_dir)
+        print(f"Wrote page text: {pages_path} (from the source blocks)")
+    else:
+        pages_path = _write_section_pages(sections, output_dir)
+        print(f"Wrote section text: {pages_path}")
 
     toc_path = write_toc(output_dir, result.outline)
     print(f"Wrote table of contents: {toc_path} ({len(result.outline)} entries)")
@@ -1372,6 +1451,11 @@ def run_md_ingest(args: argparse.Namespace) -> None:
         max_level=getattr(args, "outline_max_level", None),
         profile=getattr(args, "profile", "auto"),
         write_items=not getattr(args, "no_items", False),
+        # A converter that wrote a block stream beside the render kept the
+        # pages; without it the sections fall back to one page each.
+        source_blocks=(
+            getattr(args, "blocks", None) or blockslib.find_source_blocks(input_path)
+        ),
     )
 
 
@@ -1513,6 +1597,7 @@ def run_convert(args: argparse.Namespace) -> None:
         max_level=getattr(args, "outline_max_level", None),
         profile=getattr(args, "profile", "auto"),
         write_items=not getattr(args, "no_items", False),
+        source_blocks=getattr(args, "blocks", None) or blockslib.find_source_blocks(input_path),
     )
 
 

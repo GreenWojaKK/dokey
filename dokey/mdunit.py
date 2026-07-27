@@ -943,7 +943,11 @@ def split_markdown(
     ).sections
 
 
-def build_section_ranges(sections: list[Section], output_dir: Path) -> list[SectionRange]:
+def build_section_ranges(
+    sections: list[Section],
+    output_dir: Path,
+    pages: list[tuple[int, int]] | None = None,
+) -> list[SectionRange]:
     """Turn heading sections into SectionRange rows with synthetic pages.
 
     Each section occupies exactly one synthetic page equal to its sequence
@@ -951,10 +955,13 @@ def build_section_ranges(sections: list[Section], output_dir: Path) -> list[Sect
     ``page BETWEEN pdf_start AND pdf_end`` search join) maps a page hit back to
     its one section. Artifacts are per-section ``.md`` files, not split PDFs.
 
-    The page is synthetic and stays that way: a render carries no page numbers,
-    and the running marks that survive in it were measured not to reconstruct
-    them (the mark count matched the true page count for 1 document in 866).
-    Recovering real pages needs the block stream, which keeps ``page_no``.
+    The synthetic page is a fallback, not a claim: a render carries no page
+    numbers, and the running marks that survive in it were measured not to
+    reconstruct them (the mark count matched the true page count for 1 document
+    in 866). When ``pages`` is given -- read from the block stream the render
+    came from, which keeps ``page_no`` -- the real range is used instead, and a
+    section may then span several pages or share one with its neighbours, as it
+    does in the document.
     """
     parent_indexes: dict[str, int] = {}
     parent_item_counts: dict[str, int] = {}
@@ -974,6 +981,9 @@ def build_section_ranges(sections: list[Section], output_dir: Path) -> list[Sect
         parent_folder, filename = namer.name(
             title=section.title, parent=parent, suffix=".md"
         )
+        first_page, last_page = (
+            pages[len(ranges)] if pages and len(ranges) < len(pages) else (page, page)
+        )
         ranges.append(
             SectionRange(
                 index=len(ranges) + 1,
@@ -982,11 +992,11 @@ def build_section_ranges(sections: list[Section], output_dir: Path) -> list[Sect
                 parent=parent,
                 parent_folder=parent_folder,
                 title=section.title,
-                content_start_page=page,
-                content_end_page=page,
-                pdf_start_page=page,
-                pdf_end_page=page,
-                page_count=1,
+                content_start_page=first_page,
+                content_end_page=last_page,
+                pdf_start_page=first_page,
+                pdf_end_page=last_page,
+                page_count=last_page - first_page + 1,
                 output_file=str(
                     output_dir / "artifacts" / "by_section" / parent_folder / filename
                 ),

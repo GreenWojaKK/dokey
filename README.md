@@ -309,10 +309,17 @@ ending looks like — live in `dokey/profiles/`, one module per language, and ar
 selected from the text (`--profile auto`, the default). Korean (`ko`) ships
 with the address ladder `절 → 4.1 → (1) → (가) → ① → ㉮`.
 
-A render carries no page numbers, and dokey does not invent them: sections keep
-the synthetic one-page-each numbering. (Reconstructing real pages from the
-surviving running marks was measured to work for 1 document in 866 — the block
-stream, which keeps `page_no`, is the way to get them.)
+A render carries no page numbers of its own, and reconstructing them from the
+running marks that survive in it was measured to work for 1 document in 866. So
+dokey takes them from the stream the render came from: Docling writes
+`prov[].page_no` on every block and leaves the JSON beside the Markdown, and
+when it is there each section gets the pages it actually occupies. Measured on
+the same corpus: 9,443 of 9,830 sections located in the block stream, 387
+interpolated from their neighbour and reported as such, no section running past
+the end of its document, and 48% of sections spanning more than one page —
+where the synthetic numbering had claimed one page each, always. Without a
+block stream the synthetic page remains, as a fallback rather than a claim.
+Point at one explicitly with `--blocks`.
 
 ## Scanned and layout-heavy PDFs: `dokey convert`
 

@@ -11,10 +11,14 @@ reports only its successes cannot be audited.
 
 Four files come out:
 
+Each file counts a different thing, so their row counts are not meant to add
+up to each other:
+
 ``summary.csv``    one row per corpus-level measure
 ``documents.csv``  one row per document: sizes, demotions, ladder, defect flags
+``sections.csv``   one row per section -- the unit the manifest is made of
 ``defects.csv``    one row per defect instance, with the document it is in
-``ladders.csv``    one row per series per document: its rung, and whether the
+``ladders.csv``    one row per *series per document*: its rung, and whether the
                    document or the profile's prior decided it
 """
 from __future__ import annotations
@@ -50,10 +54,23 @@ def audit(path: Path) -> dict:
     sizes = [len(mdunit.section_page_text(s)) for s in result.sections]
     segment = paths.SegmentReport()
     unordered = 0
-    for _, items in paths.segment_sections(
+    section_rows: list[dict] = []
+    for section, items in paths.segment_sections(
         result.sections, profile=profile, ladder=result.ladder, report=segment
     ):
         unordered += sum(1 for item in items if not item.ordered)
+        section_rows.append(
+            {
+                "doc_id": path.stem,
+                "field": path.parent.name,
+                "index": section.order,
+                "level": section.level,
+                "title": section.title,
+                "parent": "" if section.parent == section.title else section.parent,
+                "chars": len(mdunit.section_page_text(section)),
+                "items": len(items),
+            }
+        )
 
     # which dropped lines carried prose
     scan = mdunit._scan(text)
@@ -97,6 +114,7 @@ def audit(path: Path) -> dict:
         "titles_rejoined": report.titles_rejoined,
         "subheadings_folded": report.subheadings_folded,
         "suspect_drops": len(suspects),
+        "_sections": section_rows,
         "_suspects": suspects,
         "_rank": rank,
         "_source": source,
@@ -197,15 +215,27 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--out", type=Path, default=Path("dokey_out/reports"), help="Where to write"
     )
+    parser.add_argument(
+        "--glob",
+        default="**/*.md",
+        help=(
+            "Which files count as documents. The default sweeps every .md "
+            "below the directory, which also picks up a README describing the "
+            "corpus; pass '*/*.md' for a <field>/<doc>.md layout."
+        ),
+    )
     args = parser.parse_args(argv)
 
-    files = sorted(args.directory.rglob("*.md"))
+    files = sorted(args.directory.glob(args.glob))
     if not files:
         parser.error(f"No .md files under {args.directory}")
 
     rows = []
+    section_rows: list[dict] = []
     for position, path in enumerate(files, 1):
-        rows.append(audit(path))
+        row = audit(path)
+        rows.append(row)
+        section_rows.extend(row["_sections"])
         if position % 100 == 0:
             print(f"  {position}/{len(files)}", flush=True)
 
@@ -213,6 +243,11 @@ def main(argv: list[str] | None = None) -> int:
         key for key in rows[0] if not key.startswith("_")
     ]
     write_csv(args.out / "documents.csv", rows, document_fields)
+    write_csv(
+        args.out / "sections.csv",
+        section_rows,
+        ["doc_id", "field", "index", "level", "title", "parent", "chars", "items"],
+    )
 
     defect_rows = [entry for row in rows for entry in defects(row)]
     write_csv(

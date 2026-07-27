@@ -133,6 +133,7 @@ class UnitizeReport:
     empty_headings_demoted: int = 0
     echoes: list = field(default_factory=list)
     ladder: dict = field(default_factory=dict)
+    heading_ladder: dict = field(default_factory=dict)
     furniture_tables_dropped: int = 0
     notes: list[str] = field(default_factory=list)
 
@@ -158,6 +159,7 @@ class UnitizeReport:
             ],
             "empty_headings_demoted": self.empty_headings_demoted,
             "ladder": self.ladder,
+            "heading_ladder": self.heading_ladder,
             "furniture_tables_dropped": self.furniture_tables_dropped,
             "known_defects": list(self.notes),
         }
@@ -165,7 +167,7 @@ class UnitizeReport:
     def summary(self) -> str:
         parts = [f"{self.sections} sections from {self.headings} headings"]
         if self.derived_levels:
-            order = " > ".join(self.ladder.get("order", ())) or "none"
+            order = " > ".join(self.heading_ladder.get("order", ())) or "none"
             parts.append(f"levels from the document's ladder [{order}] (max {self.max_level})")
         if self.subheadings_folded:
             parts.append(f"{self.subheadings_folded} subheadings folded into parents")
@@ -808,11 +810,34 @@ def unitize(
     # Which series encloses which is the document's own convention, so it is
     # read off the document before anything is decided by it.
     ladder = ladderlib.induce_from_lines(scan.lines, active)
+    # Sections are decided by headings, so their rungs are induced from
+    # headings. A series a document uses in both places -- ``1.`` heading its
+    # clauses and again numbering the items inside a checklist -- ranks by
+    # whichever use is commoner, and in a document full of checklists that is
+    # the deep one: measured in D-C-8-2026, clause numbering landed on rung 3
+    # and every clause folded away, leaving one section holding 14,627
+    # characters. The body ladder still addresses the items; it just does not
+    # get to say what a section is.
+    heading_ladder = ladder
+    heading_titles = [head.title for head in scan.heads]
+    if len(heading_titles) >= 2:
+        induced = ladderlib.induce_from_lines(heading_titles, active)
+        if induced.order:
+            heading_ladder = ladderlib.Ladder(
+                rank=induced.rank,
+                order=induced.order,
+                source=induced.source,
+                evidence=induced.evidence,
+                # Whether a series' ordinals advance is a fact about the whole
+                # document, not about its headings.
+                unordered_kinds=ladder.unordered_kinds,
+            )
     report.ladder = ladder.as_dict()
+    report.heading_ladder = heading_ladder.as_dict()
     for head in scan.heads:
         head.numbering = active.numbering(head.title)
         head.addressed = head.numbering is not None and (
-            ladder.kind_of(head.numbering) != ladderlib.UNORDERED
+            heading_ladder.kind_of(head.numbering) != ladderlib.UNORDERED
         )
 
     mark_keys = _running_mark_keys(scan, active)
@@ -833,7 +858,7 @@ def unitize(
     # document, not against its neighbours, before any of them becomes a section.
     _demote_title_echoes(scan, active, report)
     _demote_empty_headings(scan, drop_lines, active, report)
-    derived = _assign_levels(scan.heads, ladder)
+    derived = _assign_levels(scan.heads, heading_ladder)
     report.derived_levels = derived
 
     if max_level is not None:

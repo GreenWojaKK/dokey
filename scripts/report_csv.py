@@ -86,7 +86,12 @@ def audit(path: Path) -> dict:
     ladder = result.ladder
     rank = dict(ladder.rank) if ladder else {}
     source = dict(ladder.source) if ladder else {}
-    clause_rung = rank.get("integer")
+    # Sections are decided by the heading ladder, so that is the rung a
+    # "clause sits below the split depth" defect has to be measured against;
+    # the body ladder addresses items and would report a defect that is not one.
+    heading_rank = dict(report.heading_ladder.get("rank", {})) or rank
+    heading_source = dict(report.heading_ladder.get("source", {})) or source
+    clause_rung = heading_rank.get("integer")
     cap = report.max_level
     return {
         "doc_id": path.stem,
@@ -98,9 +103,12 @@ def audit(path: Path) -> dict:
         "section_chars_median": int(statistics.median(sizes)) if sizes else 0,
         "section_chars_max": max(sizes) if sizes else 0,
         "split_depth": cap if cap is not None else "",
-        "ladder": " > ".join(ladder.order) if ladder else "",
-        "rungs_observed": sum(1 for v in source.values() if v == "observed"),
-        "rungs_from_prior": sum(1 for v in source.values() if v == "prior"),
+        "ladder": " > ".join(report.heading_ladder.get("order", ())) or (
+            " > ".join(ladder.order) if ladder else ""
+        ),
+        "body_ladder": " > ".join(ladder.order) if ladder else "",
+        "rungs_observed": sum(1 for v in heading_source.values() if v == "observed"),
+        "rungs_from_prior": sum(1 for v in heading_source.values() if v == "prior"),
         "items": segment.items,
         "items_unordered": unordered,
         "items_irregular": segment.irregular,
@@ -118,6 +126,8 @@ def audit(path: Path) -> dict:
         "_suspects": suspects,
         "_rank": rank,
         "_source": source,
+        "_heading_rank": heading_rank,
+        "_heading_source": heading_source,
         "_sizes": sizes,
         "_clause_rung": clause_rung,
     }
@@ -257,15 +267,22 @@ def main(argv: list[str] | None = None) -> int:
     ladder_rows = [
         {
             "doc_id": row["doc_id"],
+            "scope": scope,
             "series": kind,
             "rung": rung,
-            "decided_by": row["_source"].get(kind, "prior"),
+            "decided_by": source.get(kind, "prior"),
         }
         for row in rows
-        for kind, rung in sorted(row["_rank"].items(), key=lambda item: item[1])
+        for scope, ranks, source in (
+            ("headings", row["_heading_rank"], row["_heading_source"]),
+            ("body", row["_rank"], row["_source"]),
+        )
+        for kind, rung in sorted(ranks.items(), key=lambda item: item[1])
     ]
     write_csv(
-        args.out / "ladders.csv", ladder_rows, ["doc_id", "series", "rung", "decided_by"]
+        args.out / "ladders.csv",
+        ladder_rows,
+        ["doc_id", "scope", "series", "rung", "decided_by"],
     )
 
     sizes = [size for row in rows for size in row["_sizes"]]

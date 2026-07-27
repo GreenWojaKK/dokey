@@ -12,6 +12,7 @@ from pathlib import Path
 from pypdf import PdfReader, PdfWriter
 
 from dokey import backends as backendslib
+from dokey import bodytoc
 from dokey import convert as convertlib
 from dokey import folios as folioslib
 from dokey import i18n as i18nlib
@@ -2260,6 +2261,84 @@ CLAUSE_BODY = """\
 
 (2) 그 밖의 용어는 관계 법령에 따른다.
 """
+
+
+class BodyDerivedTocTests(unittest.TestCase):
+    """Reading a table of contents off the body when the front matter has none.
+
+    The shape that forces this is a contents page listing titles with no page
+    numbers -- a reader manages, the title-and-page reader does not -- and it
+    is common in corporate rules.
+    """
+
+    CONTENTS = "목차\n1. 적용범위\n2. 목적\n3. 용어의 정의\n4. 일반 사항\n"
+    BODY_ONE = (
+        "1. 적용범위\n\n이 규칙은 조직의 활동에 적용한다.\n\n"
+        "2. 목적\n\n환경 측면을 파악하고 평가함을 목적으로 한다.\n\n"
+        "3. 용어의 정의\n\n3.1 환경영향\n\n환경 변화를 말한다.\n"
+    )
+    BODY_TWO = "4. 일반 사항\n\n부서장은 다음을 따른다.\n\n1) 첫째 항목\n2) 둘째 항목\n"
+
+    def test_headings_are_found_with_the_page_they_start_on(self) -> None:
+        entries = bodytoc.derive_toc([self.CONTENTS, self.BODY_ONE, self.BODY_TWO])
+        self.assertEqual(
+            [(entry.title, entry.page) for entry in entries],
+            [
+                ("1. 적용범위", 2),
+                ("2. 목적", 2),
+                ("3. 용어의 정의", 2),
+                ("4. 일반 사항", 3),
+            ],
+        )
+
+    def test_the_contents_listing_itself_is_not_the_body(self) -> None:
+        # Its entries come first and would put every section on page 1; a
+        # listing is recognizable by its entries sitting on consecutive lines.
+        entries = bodytoc.derive_toc([self.CONTENTS, self.BODY_ONE, self.BODY_TWO])
+        self.assertNotIn(1, [entry.page for entry in entries])
+
+    def test_an_unresolved_auto_list_does_not_swallow_the_clauses_around_it(
+        self,
+    ) -> None:
+        # Measured: a list rendered as "0. 0. 0." sat between clauses 4 and 6,
+        # and the run of it plus its neighbours read as a contents listing --
+        # taking clauses 5 and 6 with it.
+        body = (
+            "4. 일반 사항\n\n다음을 고려한다.\n\n"
+            "0. 첫째 고려사항\n0. 둘째 고려사항\n0. 셋째 고려사항\n\n"
+            "5. 평가 기준 수립\n\n기준을 세운다.\n\n"
+            "0. 심각도\n0. 가능성\n0. 발생빈도\n\n"
+            "6. 평가 실시\n\n평가한다.\n"
+        )
+        contents = "목차\n1. 적용범위\n2. 목적\n3. 용어의 정의\n4. 일반 사항\n"
+        entries = bodytoc.derive_toc([contents, body])
+        self.assertEqual(
+            [entry.title for entry in entries],
+            ["4. 일반 사항", "5. 평가 기준 수립", "6. 평가 실시"],
+        )
+        self.assertTrue(all(entry.page == 2 for entry in entries))
+
+    def test_a_numbered_sentence_is_not_a_heading(self) -> None:
+        body = (
+            "1. 적용범위\n\n본문.\n\n"
+            "2. 이 규칙은 전과정의 관점에서 조직이 관리할 수 있는 환경측면에 적용한다.\n\n"
+            "2. 목적\n\n본문.\n"
+        )
+        entries = bodytoc.derive_toc([body])
+        self.assertEqual([entry.title for entry in entries], ["1. 적용범위", "2. 목적"])
+
+    def test_depth_is_the_document_own_ladder(self) -> None:
+        pages = [self.CONTENTS, self.BODY_ONE, self.BODY_TWO]
+        deep = bodytoc.derive_toc(pages, max_level=2)
+        self.assertIn("3.1 환경영향", [entry.title for entry in deep])
+        self.assertEqual(
+            [entry.level for entry in deep if entry.title == "3.1 환경영향"], [2]
+        )
+        shallow = bodytoc.derive_toc(pages, max_level=1)
+        self.assertNotIn("3.1 환경영향", [entry.title for entry in shallow])
+
+    def test_a_document_with_no_numbering_yields_nothing(self) -> None:
+        self.assertEqual(bodytoc.derive_toc(["서문입니다.\n\n본문이 이어집니다.\n"]), [])
 
 
 class LadderInductionTests(unittest.TestCase):

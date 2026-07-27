@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 from . import backends as backendslib
+from . import bodytoc
 from . import convert as convertlib
 from . import detect as detectlib
 from . import folios as folioslib
@@ -763,7 +764,15 @@ def run_app(args: argparse.Namespace) -> None:
         import webview
 
         webview.create_window(
-            "Dokey", f"http://127.0.0.1:{port}", width=1280, height=860
+            "Dokey",
+            f"http://127.0.0.1:{port}",
+            width=1280,
+            height=860,
+            # pywebview disables text selection by default, which makes the
+            # desktop window a place where an error message can be read but not
+            # copied -- exactly the text a user needs to hand to someone else.
+            # The browser UI never had this problem; the app should not either.
+            text_select=True,
         )
         assets_dir = Path(__file__).resolve().parent / "assets"
         # winforms needs a real .ico; gtk/cocoa load PNG directly.
@@ -977,9 +986,13 @@ def run_auto(args: argparse.Namespace) -> None:
     except ValueError:
         pass
 
+    # An entry whose page is already a physical PDF page needs no offset and no
+    # smoke test: an outline's destination and a heading found in the body both
+    # say where they are, where a printed contents page only says what the book
+    # calls that place.
+    physical_pages = bool(entries)
     if entries:
         print(f"TOC: {len(entries)} entries from the embedded PDF outline")
-        # Outline destinations are physical PDF pages; no offset applies.
         page_offset = 0 if args.page_offset is None else args.page_offset
     else:
         if not has_fitz:
@@ -991,11 +1004,35 @@ def run_auto(args: argparse.Namespace) -> None:
             )
         endpoint, _ = backendslib.resolve_endpoint(args.ocr_endpoint)
         ocr_client = ocrlib.OcrClient(endpoint, max_tokens=2048)
-        entries = read_page_toc(
-            input_pdf, toc_pages=args.toc_page, ocr_client=ocr_client
-        )
-        print(f"TOC: {len(entries)} entries from the printed contents page(s)")
+        try:
+            entries = read_page_toc(
+                input_pdf, toc_pages=args.toc_page, ocr_client=ocr_client
+            )
+            print(f"TOC: {len(entries)} entries from the printed contents page(s)")
+        except ValueError as exc:
+            # A contents page that lists titles without page numbers is not a
+            # contents page to a reader looking for title-and-page pairs, and
+            # neither is a document that prints no contents at all. Both still
+            # number their clauses, and every clause appears in the body where
+            # it starts -- so the last thing to try before giving up is the
+            # document's own headings.
+            entries = bodytoc.derive_toc(
+                [page.extract_text() or "" for page in reader.pages],
+                profile=getattr(args, "profile", "auto"),
+                max_level=_outline_max_level(args),
+            )
+            if not entries:
+                raise SystemExit(str(exc)) from exc
+            print(
+                f"TOC: {len(entries)} entries derived from the document's own "
+                "numbered headings (no contents page with page numbers)"
+            )
+            # Derived entries carry the page they were found on, like an
+            # outline's destinations: physical PDF pages, so no offset applies.
+            page_offset = 0 if args.page_offset is None else args.page_offset
+            physical_pages = True
 
+    if not physical_pages:
         # A page offset prior: the flag if given, else the running folios,
         # else the first TOC titles located in the body. The prior is never
         # trusted as-is — the smoke test below verifies every section.

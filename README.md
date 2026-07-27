@@ -32,9 +32,19 @@ lake/
 `silver/sections.*` is the main contract. PDF files under `artifacts/` are derived artifacts. `gold/search.db` is the derived full-text search index, created by `dokey index` or on first `dokey search`.
 
 `silver/toc.jsonl` is the outline the ingest worked from — the embedded PDF
-outline, the printed contents page, or (for a render) the document's own
-headings after the sweep described below. Every ingest establishes it first and
-splits from it, so it is the record of how the sections were decided.
+outline, the printed contents page, the document's own numbered headings, or
+(for a render) those headings after the sweep described below. Every ingest
+establishes it first and splits from it, so it is the record of how the
+sections were decided.
+
+The third source exists because the second one fails on a shape that is
+perfectly readable to a person: **a contents page that lists titles with no
+page numbers.** A reader looking for title-and-page pairs finds no pairs and
+reports no contents page, while the document is not short of structure at all —
+its clauses are numbered, and each appears in the body where it starts. So
+before giving up, dokey reads the headings off the body and takes the page each
+was found on. Those pages are physical, like an outline's, so no page offset
+applies and no smoke test is needed to place them.
 
 `silver/items.jsonl` goes one level finer, for Markdown inputs. A section is
 the unit a reader cites, but it is not the unit a document *addresses*: a

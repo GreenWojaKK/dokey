@@ -11,6 +11,7 @@ import io
 import os
 import sys
 import tempfile
+import traceback
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -53,6 +54,25 @@ def ui_language() -> str:
 
 def t(key: str, **values: object) -> str:
     return translate(ui_language(), key, **values)
+
+
+def _report_failure(message_key: str, exc: BaseException, log, *, trace: str = "") -> None:
+    """Show a failure in a form that can be handed to someone else.
+
+    The message goes in a banner for the eye and *also* into the code block,
+    because the banner is the line a user actually needs to quote and the code
+    block is the only part with a copy button. An unexpected exception brings
+    its traceback along: it is the difference between "it failed" and knowing
+    where.
+    """
+    st.error(t(message_key, error=exc))
+    parts = [f"{type(exc).__name__}: {exc}"]
+    if trace:
+        parts.append(trace.rstrip())
+    output = log.getvalue().strip()
+    if output:
+        parts.append(output)
+    st.code("\n\n".join(parts) or t("no_output"))
 
 
 def save_ui_language() -> None:
@@ -158,12 +178,12 @@ def run_ingest_ui(
             with st.spinner(t("building_index")), contextlib.redirect_stdout(log):
                 searchlib.build_index(out_dir)
     except SystemExit as exc:
-        st.error(t("ingest_failed", error=exc))
-        st.code(log.getvalue() or t("no_output"))
+        _report_failure("ingest_failed", exc, log)
         return
     except Exception as exc:  # surface any pipeline error in the browser
-        st.error(t("ingest_error", error=exc))
-        st.code(log.getvalue() or t("no_output"))
+        _report_failure(
+            "ingest_error", exc, log, trace=traceback.format_exc()
+        )
         return
 
     st.success(t("ingested", path=out_dir))
@@ -221,12 +241,12 @@ def run_ingest_auto_ui(
                 # The auto run already built the index; just note the skip.
                 st.warning(t("skipped_page_recovery", error=exc))
     except SystemExit as exc:
-        st.error(t("ingest_failed", error=exc))
-        st.code(log.getvalue() or t("no_output"))
+        _report_failure("ingest_failed", exc, log)
         return
     except Exception as exc:  # surface any pipeline error in the browser
-        st.error(t("ingest_error", error=exc))
-        st.code(log.getvalue() or t("no_output"))
+        _report_failure(
+            "ingest_error", exc, log, trace=traceback.format_exc()
+        )
         return
 
     st.success(t("ingested", path=out_dir))
@@ -366,12 +386,12 @@ def run_hwp_ingest_ui(upload, lake_name: str) -> None:
                 contextlib.redirect_stdout(log):
             dokey_cli.run_hwp_ingest(args)
     except SystemExit as exc:
-        st.error(t("ingest_failed", error=exc))
-        st.code(log.getvalue() or t("no_output"))
+        _report_failure("ingest_failed", exc, log)
         return
     except Exception as exc:  # surface any pipeline error in the browser
-        st.error(t("ingest_error", error=exc))
-        st.code(log.getvalue() or t("no_output"))
+        _report_failure(
+            "ingest_error", exc, log, trace=traceback.format_exc()
+        )
         return
 
     st.success(t("ingested", path=out_dir))
@@ -411,12 +431,12 @@ def run_md_ingest_ui(upload, lake_name: str) -> None:
                 contextlib.redirect_stdout(log):
             dokey_cli.run_md_ingest(args)
     except SystemExit as exc:
-        st.error(t("ingest_failed", error=exc))
-        st.code(log.getvalue() or t("no_output"))
+        _report_failure("ingest_failed", exc, log)
         return
     except Exception as exc:  # surface any pipeline error in the browser
-        st.error(t("ingest_error", error=exc))
-        st.code(log.getvalue() or t("no_output"))
+        _report_failure(
+            "ingest_error", exc, log, trace=traceback.format_exc()
+        )
         return
 
     st.success(t("ingested", path=out_dir))

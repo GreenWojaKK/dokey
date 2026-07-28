@@ -57,6 +57,25 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "No HWP converter found. Install hwp2md, or set one from a terminal: "
             "`dokey hwp --set \"...\"`."
         ),
+        "converter_online": "Layout converter: {cmd} ({source})",
+        "converter_offline": (
+            "No layout converter found. Scanned pages have no text to read and "
+            "would index empty; `pip install docling` and dokey runs it from "
+            "here, no setup."
+        ),
+        "converter_source_config": "saved",
+        "converter_source_discovered": "found on this machine",
+        "converter_source_flag": "command option",
+        "read_method": "Reading the PDF",
+        "read_method_auto": "Automatic",
+        "read_method_never": "Text layer only",
+        "read_method_always": "Layout converter",
+        "read_method_help": (
+            "Automatic reads the PDF's own text layer and hands it to the "
+            "layout converter only when the pages are images. Choose the "
+            "converter to reconstruct a layout the text layer gets wrong "
+            "(multi-column, tables) — slower, and it needs one installed."
+        ),
         "ingest_mode": "Mode",
         "ingest_mode_auto": "Auto (recommended)",
         "ingest_mode_manual": "Manual",
@@ -109,6 +128,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "No library yet. Use ‘Add a book’ above, or run `dokey ingest`."
         ),
         "library": "Library",
+        "browse_library": "📂 Open a library folder…",
+        "browse_library_help": (
+            "Point at a library anywhere on this machine. dokey lists the ones "
+            "under the folder it was started in; this reaches the rest."
+        ),
+        "browse_library_title": "Choose a dokey library folder",
+        "browse_cancelled": "No folder chosen.",
         "custom_library_path": "Custom library path",
         "custom_library_path_help": "Overrides the library selected above.",
         "not_library": (
@@ -194,6 +220,24 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "HWP 변환기를 찾지 못했습니다. hwp2md를 설치하거나, 터미널에서 "
             "`dokey hwp --set \"...\"`로 지정하세요."
         ),
+        "converter_online": "레이아웃 변환기: {cmd} ({source})",
+        "converter_offline": (
+            "레이아웃 변환기를 찾지 못했습니다. 스캔 지면은 읽을 텍스트가 없어 "
+            "빈 채로 색인됩니다. `pip install docling`을 하면 별도 설정 없이 "
+            "dokey가 여기서 실행합니다."
+        ),
+        "converter_source_config": "저장된 설정",
+        "converter_source_discovered": "이 컴퓨터에서 발견",
+        "converter_source_flag": "명령 옵션",
+        "read_method": "PDF 읽기 방식",
+        "read_method_auto": "자동",
+        "read_method_never": "텍스트 층만",
+        "read_method_always": "레이아웃 변환기",
+        "read_method_help": (
+            "자동은 PDF의 텍스트 층을 읽고, 지면이 이미지일 때만 레이아웃 "
+            "변환기에 넘깁니다. 텍스트 층이 순서를 그르치는 조판(다단·표)은 "
+            "변환기를 직접 고르십시오 — 느리고, 변환기가 설치돼 있어야 합니다."
+        ),
         "ingest_mode": "인식 방식",
         "ingest_mode_auto": "자동 (권장)",
         "ingest_mode_manual": "직접 설정",
@@ -246,6 +290,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "`dokey ingest`를 실행하세요."
         ),
         "library": "라이브러리",
+        "browse_library": "📂 라이브러리 폴더 열기…",
+        "browse_library_help": (
+            "이 컴퓨터의 어느 위치든 지정할 수 있습니다. 목록에는 dokey를 실행한 "
+            "폴더 아래의 라이브러리만 나오며, 그 밖의 것은 이 버튼으로 엽니다."
+        ),
+        "browse_library_title": "dokey 라이브러리 폴더 선택",
+        "browse_cancelled": "폴더를 고르지 않았습니다.",
         "custom_library_path": "사용자 지정 라이브러리 경로",
         "custom_library_path_help": "위에서 선택한 라이브러리 대신 이 경로를 사용합니다.",
         "not_library": (

@@ -26,6 +26,7 @@ if _REPO_ROOT not in sys.path:
 
 from dokey import backends as backendslib
 from dokey import cli as dokey_cli
+from dokey import convert as convertlib
 from dokey import hwp as hwplib
 from dokey import mdunit
 from dokey import search as searchlib
@@ -35,6 +36,7 @@ from dokey.i18n import (
     preferred_language,
     translate,
 )
+from dokey.pickers import HAS_FOLDER_PICKER, choose_folder
 from dokey.names import slugify
 
 _MARK_CSS = (
@@ -200,11 +202,16 @@ def run_ingest_auto_ui(
     toc_pages: list[int] | None,
     recover_folios: bool,
     lake_name: str,
+    read_method: str = "auto",
 ) -> None:
     """The smart one-shot path, mirroring `dokey auto`: recognize the TOC
     source, estimate the page offset, smoke-test every section start, pick the
     section overlap from how the document breaks, ingest, and index — all with
-    no manual page offset. ``None`` overrides mean "let auto decide"."""
+    no manual page offset. ``None`` overrides mean "let auto decide".
+
+    ``read_method`` is the same choice as the CLI's ``--convert``: 'auto' hands
+    the document to the layout converter only when its pages are images,
+    'always' does so regardless, 'never' stays on the text layer."""
     work = Path(tempfile.mkdtemp(prefix="dokey_ui_"))
     pdf_path = work / pdf_upload.name
     pdf_path.write_bytes(pdf_upload.getvalue())
@@ -221,6 +228,9 @@ def run_ingest_auto_ui(
         outline_max_level=1,
         section_overlap=section_overlap,  # None -> detect clean vs mid-page
         ocr_endpoint=None,  # resolved: saved backend, else the built-in default
+        convert=read_method,  # auto: only when the pages are images
+        profile="auto",
+        no_items=False,
     )
     log = io.StringIO()
     try:
@@ -446,10 +456,42 @@ def run_md_ingest_ui(upload, lake_name: str) -> None:
     st.rerun()
 
 
+def converter_status() -> bool:
+    """Show whether a layout converter is in reach, and say so either way.
+
+    Nothing has to be configured for one to be used: dokey looks for it on
+    PATH and in the interpreter running dokey, exactly as the CLI does. The
+    caption exists so the answer is visible before a scanned book is added
+    rather than after it indexes empty.
+    """
+    converter, source = convertlib.resolve_converter()
+    if converter is None:
+        st.caption(t("converter_offline"))
+        return False
+    known = {"config", "discovered", "flag"}
+    st.caption(
+        t(
+            "converter_online",
+            cmd=converter.display(),
+            source=t(f"converter_source_{source}") if source in known else source,
+        )
+    )
+    return True
+
+
 def _auto_ingest_form(pdf_upload) -> None:
     """Zero-config ingest: upload and add. Overrides are tucked away and only
     needed to correct a wrong guess."""
+    has_converter = converter_status()
     with st.expander(t("advanced_overrides"), expanded=False):
+        read_method = st.selectbox(
+            t("read_method"),
+            ["auto", "never", "always"],
+            format_func=lambda value: t(f"read_method_{value}"),
+            key="auto_convert",
+            help=t("read_method_help"),
+            disabled=not has_converter,
+        )
         offset_text = st.text_input(
             t("page_offset_auto"), value="", key="auto_offset",
             help=t("page_offset_auto_help"),
@@ -483,6 +525,7 @@ def _auto_ingest_form(pdf_upload) -> None:
         toc_pages = _parse_int_list(toc_page_text)
         run_ingest_auto_ui(
             pdf_upload, page_offset, section_overlap, toc_pages, recover, lake_name,
+            read_method if has_converter else "never",
         )
 
 
@@ -544,19 +587,41 @@ def pick_lake(cli_lake: Path | None) -> Path:
         candidates.insert(0, new_lake)
     if cli_lake is not None and str(cli_lake) not in candidates:
         candidates.insert(0, str(cli_lake))
+    opened = st.session_state.get("_opened_lake")
+    if opened and opened not in candidates:
+        candidates.insert(0, opened)
+
+    # The list holds what is under the folder dokey was started in; anything
+    # else is opened the way a folder is normally opened.
+    if HAS_FOLDER_PICKER:
+        if st.button(
+            t("browse_library"), key="lake_browse", help=t("browse_library_help")
+        ):
+            chosen = choose_folder(t("browse_library_title"))
+            if chosen:
+                st.session_state["_opened_lake"] = chosen
+                st.session_state["lake_select"] = chosen
+                st.rerun()
+            st.caption(t("browse_cancelled"))
+
     if not candidates:
         st.info(t("no_library"))
         st.stop()
     if new_lake and new_lake in candidates:
         st.session_state["lake_select"] = new_lake  # auto-select the fresh lake
     selected = st.selectbox(t("library"), candidates, key="lake_select")
-    custom = st.text_input(
-        t("custom_library_path"),
-        value="",
-        key="lake_path",
-        help=t("custom_library_path_help"),
-    )
-    lake_str = custom.strip() or selected
+    if HAS_FOLDER_PICKER:
+        lake_str = selected
+    else:
+        # No Tk to open a dialog with: typing the path is the fallback, not the
+        # first offer.
+        custom = st.text_input(
+            t("custom_library_path"),
+            value="",
+            key="lake_path",
+            help=t("custom_library_path_help"),
+        )
+        lake_str = custom.strip() or selected
     lake = Path(lake_str)
     if not (lake / "silver" / "sections.jsonl").exists():
         st.error(t("not_library", path=lake))

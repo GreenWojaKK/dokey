@@ -507,6 +507,13 @@ optionally recovers printed page numbers, builds the index, and opens the new
 lake — no CLI needed. The **🔌 OCR backend** panel shows whether your local
 serving is up and lets you pick a discovered server.
 
+A library is a folder on this machine, so it is opened the way a folder is
+normally opened: **📂 Open a library folder…** raises the platform's own
+chooser. The dropdown lists the lakes under the directory dokey was started
+in; the button reaches everything else, and no path has to be typed. (The
+dialog runs as its own process — a Tk loop inside the server's script thread
+is a way to hang it — and falls back to a path box only where Tk is missing.)
+
 The sidebar language selector switches the full app UI between Korean and
 English. The choice is saved in `~/.dokey/config.json` for the next launch.
 

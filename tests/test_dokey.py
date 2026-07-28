@@ -664,6 +664,46 @@ class UiSmokeTests(unittest.TestCase):
                     os.environ["DOKEY_CONFIG_DIR"] = previous_config
 
 
+class FolderPickerTests(unittest.TestCase):
+    """The folder chooser: its own process, and an answer that survives Korean."""
+
+    def test_the_dialog_program_is_valid_python_for_any_path_or_title(self) -> None:
+        from dokey import pickers
+
+        snippet = pickers.folder_dialog_snippet(
+            "dokey 라이브러리 폴더 선택", Path(r"C:\사용자\Temp\my folder\answer.txt")
+        )
+        compile(snippet, "<picker>", "exec")  # quoting is the whole risk here
+        self.assertIn("askdirectory", snippet)
+
+    def test_a_chosen_folder_comes_back_whatever_the_console_codepage(self) -> None:
+        from dokey import pickers
+
+        if not pickers.HAS_FOLDER_PICKER:
+            self.skipTest("tkinter not installed")
+        picked = r"C:\문서\내 라이브러리"
+
+        def runner(command, **kwargs):
+            # Stand in for the dialog: write the answer where it is expected.
+            snippet = command[command.index("-c") + 1]
+            target = Path(json.loads(snippet.split("Path(")[1].split(")")[0]))
+            target.write_text(picked, encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        self.assertEqual(pickers.choose_folder("pick", runner=runner), picked)
+
+    def test_a_cancelled_dialog_changes_nothing(self) -> None:
+        from dokey import pickers
+
+        if not pickers.HAS_FOLDER_PICKER:
+            self.skipTest("tkinter not installed")
+
+        def runner(command, **kwargs):  # the user pressed Cancel: empty answer
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        self.assertIsNone(pickers.choose_folder("pick", runner=runner))
+
+
 @unittest.skipUnless(
     importlib.util.find_spec("streamlit") is not None, "streamlit not installed"
 )
@@ -693,6 +733,55 @@ class UiIngestPanelTests(unittest.TestCase):
                 self.assertIn("auto_offset", offset_keys)
                 number_keys = {widget.key for widget in app.number_input}
                 self.assertNotIn("ing_offset", number_keys)
+            finally:
+                os.chdir(previous_cwd)
+                if previous_config is None:
+                    os.environ.pop("DOKEY_CONFIG_DIR", None)
+                else:
+                    os.environ["DOKEY_CONFIG_DIR"] = previous_config
+
+    def test_the_layout_converter_is_offered_without_configuring_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            previous_cwd = Path.cwd()
+            previous_config = os.environ.get("DOKEY_CONFIG_DIR")
+            # An empty config dir: nothing is saved, so whatever the panel
+            # offers came from discovery alone.
+            os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
+            os.chdir(tmp_path)
+            try:
+                app = self._app(tmp_path).run()
+                self.assertFalse(app.exception)
+                self.assertIn(
+                    "auto_convert", {widget.key for widget in app.selectbox}
+                )
+                self.assertEqual(app.selectbox(key="auto_convert").value, "auto")
+            finally:
+                os.chdir(previous_cwd)
+                if previous_config is None:
+                    os.environ.pop("DOKEY_CONFIG_DIR", None)
+                else:
+                    os.environ["DOKEY_CONFIG_DIR"] = previous_config
+
+    def test_a_library_is_opened_with_a_folder_dialog_not_a_typed_path(self) -> None:
+        from dokey import pickers
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            previous_cwd = Path.cwd()
+            previous_config = os.environ.get("DOKEY_CONFIG_DIR")
+            os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
+            os.chdir(tmp_path)
+            try:
+                app = self._app(tmp_path).run()
+                self.assertFalse(app.exception)
+                buttons = {widget.key for widget in app.button}
+                text_inputs = {widget.key for widget in app.text_input}
+                if pickers.HAS_FOLDER_PICKER:
+                    self.assertIn("lake_browse", buttons)
+                    self.assertNotIn("lake_path", text_inputs)
+                else:
+                    self.assertIn("lake_path", text_inputs)
             finally:
                 os.chdir(previous_cwd)
                 if previous_config is None:

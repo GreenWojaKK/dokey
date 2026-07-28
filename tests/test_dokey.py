@@ -5,6 +5,7 @@ import importlib.util
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -1031,7 +1032,7 @@ class ConverterSeamTests(unittest.TestCase):
                 work_dir=work,
                 runner=runner,
             )
-            self.assertEqual(produced.name, "book.md")
+            self.assertEqual([path.name for path in produced], ["book.md"])
 
     def test_a_failing_converter_reports_its_own_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1074,7 +1075,7 @@ class ConverterSeamTests(unittest.TestCase):
                 runner=runner,
             )
             self.assertTrue(seen["path"].isascii(), seen["path"])
-            self.assertEqual(produced.read_text(encoding="utf-8"), "# ok\n")
+            self.assertEqual(produced[0].read_text(encoding="utf-8"), "# ok\n")
 
     def test_converter_log_in_another_encoding_does_not_fail_the_run(self) -> None:
         # The child writes its log in the console codepage; decoding it
@@ -1147,6 +1148,81 @@ class ConverterSeamTests(unittest.TestCase):
                     os.environ.pop("DOKEY_CONFIG_DIR", None)
                 else:
                     os.environ["DOKEY_CONFIG_DIR"] = previous
+
+    def test_both_formats_come_out_of_one_conversion_by_default(self) -> None:
+        command = self.command(to=convertlib.DEFAULT_TARGETS)
+        self.assertEqual(
+            [command[i + 1] for i, part in enumerate(command) if part == "--to"],
+            ["md", "json"],
+        )
+
+    def _stub_converter(self, tmp: Path) -> Path:
+        """A stand-in converter: writes the formats it was asked for, no models."""
+        script = tmp / "stub_converter.py"
+        script.write_text(
+            "import json, sys\n"
+            "from pathlib import Path\n"
+            "argv = sys.argv[1:]\n"
+            "source = Path(argv[1])\n"
+            "targets = [argv[i + 1] for i, a in enumerate(argv) if a == '--to']\n"
+            "out = Path(argv[argv.index('--output') + 1])\n"
+            "out.mkdir(parents=True, exist_ok=True)\n"
+            "for target in targets:\n"
+            "    if target == 'md':\n"
+            "        (out / (source.stem + '.md')).write_text(\n"
+            "            '# Book\\n\\n## 1. Alpha\\n\\nBody text.\\n', encoding='utf-8')\n"
+            "    else:\n"
+            "        (out / (source.stem + '.json')).write_text(\n"
+            "            json.dumps({'texts': []}), encoding='utf-8')\n",
+            encoding="utf-8",
+        )
+        return script
+
+    def test_converting_writes_the_render_and_stops_there(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            previous = os.environ.get("DOKEY_CONFIG_DIR")
+            os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
+            try:
+                script = self._stub_converter(tmp_path)
+                convertlib.save_converter(
+                    convertlib.Converter((sys.executable, str(script)))
+                )
+                source = tmp_path / "book.pdf"
+                source.write_bytes(b"%PDF-1.4\n")
+                out = tmp_path / "converted"
+                lake = tmp_path / "lake"
+
+                main(["convert", str(source), "--output", str(out)])
+                # Conversion is the product: both formats, and no lake unless
+                # one was asked for.
+                self.assertTrue((out / "book.md").exists())
+                self.assertTrue((out / "book.json").exists())
+                self.assertFalse(lake.exists())
+
+                main(
+                    [
+                        "convert", str(source), "--output", str(out),
+                        "--ingest", "--output-dir", str(lake),
+                    ]
+                )
+                self.assertTrue((lake / "silver" / "sections.jsonl").exists())
+            finally:
+                if previous is None:
+                    os.environ.pop("DOKEY_CONFIG_DIR", None)
+                else:
+                    os.environ["DOKEY_CONFIG_DIR"] = previous
+
+    def test_the_help_for_convert_renders(self) -> None:
+        # argparse expands % in help text, so a measured figure written "99.7%"
+        # is read as a format specifier and every option's help dies with it.
+        import contextlib
+        import io as _io
+
+        buffer = _io.StringIO()
+        with self.assertRaises(SystemExit), contextlib.redirect_stdout(buffer):
+            main(["convert", "--help"])
+        self.assertIn("--ingest", buffer.getvalue())
 
     def test_missing_converter_explains_how_to_get_one(self) -> None:
         hint = convertlib.install_hint()

@@ -33,8 +33,9 @@ and when asked without an engine it says what the default costs.
 
 *The converter's own Markdown is not the contract.* A render loses page
 numbers, bounding boxes, and the body/furniture distinction; ``--to json``
-keeps them. Markdown is the default here because the Markdown path is what
-ingests today, but the JSON is what a citation-grade pipeline should consume.
+keeps them. Both are written by default, because they come out of one parse --
+the converter takes a list of output formats -- and because dokey's own page
+recovery looks for the JSON beside the Markdown it reads.
 """
 from __future__ import annotations
 
@@ -44,6 +45,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from hashlib import sha1
 from pathlib import Path
@@ -53,6 +55,23 @@ from . import backends as backendslib
 CONVERTER_NAME = "docling"
 DEFAULT_TIMEOUT = 1800  # a scanned book with OCR is minutes of work, not seconds
 OUTPUT_SUFFIXES = {"md": ".md", "json": ".json"}
+# What a conversion writes when nothing is asked for: the readable render and
+# the block stream it came from. One parse produces both, and dokey pairs them
+# -- ``blocks.find_source_blocks`` looks for the JSON beside the Markdown.
+DEFAULT_TARGETS = ("md", "json")
+
+
+def _targets(to: str | Sequence[str]) -> tuple[str, ...]:
+    """Normalize one target or several, keeping the caller's order."""
+    wanted = (to,) if isinstance(to, str) else tuple(to)
+    if not wanted:
+        raise SystemExit("Nothing to convert to: ask for md, json, or both.")
+    unknown = [target for target in wanted if target not in OUTPUT_SUFFIXES]
+    if unknown:
+        raise SystemExit(
+            f"Unsupported conversion target: {', '.join(unknown)} (use md or json)"
+        )
+    return tuple(dict.fromkeys(wanted))
 
 
 @dataclass(frozen=True)
@@ -210,7 +229,7 @@ def build_command(
     input_path: Path,
     output_dir: Path,
     *,
-    to: str = "md",
+    to: str | Sequence[str] = "md",
     ocr: bool = False,
     ocr_engine: str | None = None,
     ocr_lang: str | None = None,
@@ -222,8 +241,10 @@ def build_command(
         *converter.argv,
         "convert",
         str(input_path),
-        "--to",
-        to,
+    ]
+    for target in _targets(to):
+        command += ["--to", target]
+    command += [
         "--output",
         str(output_dir),
         "--abort-on-error",
@@ -273,7 +294,7 @@ def convert(
     input_path: Path,
     converter: Converter,
     *,
-    to: str = "md",
+    to: str | Sequence[str] = "md",
     ocr: bool = False,
     ocr_engine: str | None = None,
     ocr_lang: str | None = None,
@@ -283,10 +304,13 @@ def convert(
     timeout: int = DEFAULT_TIMEOUT,
     work_dir: Path | None = None,
     runner=subprocess.run,
-) -> Path:
-    """Convert a document and return the path to what the converter wrote."""
-    if to not in OUTPUT_SUFFIXES:
-        raise SystemExit(f"Unsupported conversion target: {to} (use md or json)")
+) -> tuple[Path, ...]:
+    """Convert a document; return what the converter wrote, in the order asked.
+
+    Several targets cost one conversion, not several: the converter parses the
+    document once and writes each format it was given.
+    """
+    targets = _targets(to)
     if not input_path.is_file():
         raise SystemExit(f"File not found: {input_path}")
     out_dir = work_dir or Path(tempfile.mkdtemp(prefix="dokey_convert_"))
@@ -326,20 +350,23 @@ def convert(
             f"--timeout, or convert once yourself and ingest the result."
         ) from exc
 
-    produced = sorted(out_dir.glob(f"*{OUTPUT_SUFFIXES[to]}"))
     stem = source.stem
+    produced: list[Path] = []
+    for target in targets:
+        # A directory input yields several files; a single input yields one,
+        # and the converter names it after the source stem.
+        candidates = sorted(out_dir.glob(f"*{OUTPUT_SUFFIXES[target]}"))
+        named = [path for path in candidates if path.stem == stem]
+        chosen = named or candidates
+        if chosen:
+            produced.append(chosen[0])
     if getattr(proc, "returncode", 1) != 0 or not produced:
         detail = (getattr(proc, "stderr", "") or getattr(proc, "stdout", "") or "").strip()
         raise SystemExit(
             f"Conversion failed ({converter.display()}, exit "
             f"{getattr(proc, 'returncode', '?')}):\n{detail or 'no output'}"
         )
-    # A directory input yields several files; a single input yields one, and the
-    # converter names it after the source stem.
-    for candidate in produced:
-        if candidate.stem == stem:
-            return candidate
-    return produced[0]
+    return tuple(produced)
 
 
 def install_hint() -> str:

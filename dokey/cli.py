@@ -176,29 +176,50 @@ def build_parser() -> argparse.ArgumentParser:
     )
     convert.add_argument(
         "--to",
+        action="append",
         choices=("md", "json"),
-        default="md",
+        default=None,
         help=(
-            "Conversion target. 'md' is ingested directly; 'json' keeps page "
-            "numbers and bounding boxes the Markdown drops. Default: md."
+            "Conversion target; repeatable. 'md' is the readable render, 'json' "
+            "the block stream that keeps page numbers and bounding boxes. "
+            "Default: both, which costs one conversion, and leaves the JSON "
+            "beside the Markdown where dokey looks for it."
+        ),
+    )
+    convert.add_argument(
+        "--output",
+        "--keep",
+        dest="output",
+        type=Path,
+        default=None,
+        help=(
+            "Where the converted files are written. Default: the current "
+            "directory."
+        ),
+    )
+    convert.add_argument(
+        "--ingest",
+        action="store_true",
+        help=(
+            "Also unitize the render into a searchable lake. Off by default: "
+            "converting a document and taking it apart are separate acts, and "
+            "conversion is the slow one. `dokey auto <render>.md` does the rest "
+            "whenever you want it."
         ),
     )
     convert.add_argument(
         "--output-dir",
         type=Path,
         default=None,
-        help="Lake directory. Default: dokey_out/<name> under the current directory.",
-    )
-    convert.add_argument(
-        "--keep",
-        type=Path,
-        default=None,
-        help="Also keep the converter's own output in this directory.",
+        help=(
+            "Lake directory for --ingest. Default: dokey_out/<name> under the "
+            "current directory."
+        ),
     )
     convert.add_argument(
         "--no-ingest",
         action="store_true",
-        help="Convert only; do not build a lake from the result.",
+        help="Accepted and ignored: not ingesting is now the default.",
     )
     convert.add_argument(
         "--ocr",
@@ -226,7 +247,9 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "How the converter exports figures. Default: placeholder -- the "
             "figure's position is marked and its pixels stay out of the lake "
-            "(embedded base64 was 99.7% of a measured render's characters)."
+            # argparse expands % in help text, and "% o" is a valid octal
+            # specifier: unescaped, this crashed `dokey convert --help`.
+            "(embedded base64 was 99.7%% of a measured render's characters)."
         ),
     )
     convert.add_argument(
@@ -1532,10 +1555,14 @@ def _convert_then_ingest(
             "--ocr-engine easyocr --ocr-lang ko,en"
         )
     started = time.time()
+    # Both formats, because the same parse produces them: the Markdown is what
+    # unitizes, and the block stream is where the sections' pages come from. A
+    # scan has no text layer for dokey to fall back on, so without the JSON the
+    # pages here would be the synthetic one-per-section kind.
     produced = convertlib.convert(
         input_path,
         converter,
-        to="md",
+        to=convertlib.DEFAULT_TARGETS,
         ocr=True,
         ocr_engine=options.ocr_engine,
         ocr_lang=options.ocr_lang,
@@ -1543,9 +1570,15 @@ def _convert_then_ingest(
         images=options.images or "placeholder",
         timeout=getattr(args, "timeout", convertlib.DEFAULT_TIMEOUT),
     )
-    print(f"Converted in {time.time() - started:.1f}s: {produced}")
+    render = next((path for path in produced if path.suffix == ".md"), None)
+    if render is None:
+        raise SystemExit("The converter produced no Markdown to ingest.")
+    print(
+        f"Converted in {time.time() - started:.1f}s: "
+        f"{', '.join(path.name for path in produced)}"
+    )
     _ingest_markdown(
-        produced.read_text(encoding="utf-8"),
+        render.read_text(encoding="utf-8"),
         input_path=input_path,
         output_dir=output_dir,
         fallback_title=input_path.stem,
@@ -1553,6 +1586,9 @@ def _convert_then_ingest(
         max_level=getattr(args, "outline_max_level", None),
         profile=getattr(args, "profile", "auto"),
         write_items=not getattr(args, "no_items", False),
+        source_blocks=next(
+            (path for path in produced if path.suffix == ".json"), None
+        ),
     )
 
 
@@ -1593,7 +1629,8 @@ def run_convert(args: argparse.Namespace) -> None:
             return
         print(f"Converter: {converter.display()} ({source})")
         print(f"Saved defaults: {convertlib.load_options().describe()}")
-        print("Convert and ingest a document with:  dokey convert <file.pdf>")
+        print("Convert a document with:  dokey convert <file.pdf>")
+        print("  …and unitize what comes back:  dokey convert <file.pdf> --ingest")
         return
     if converter is None:
         raise SystemExit(convertlib.install_hint())
@@ -1611,37 +1648,53 @@ def run_convert(args: argparse.Namespace) -> None:
     caution = convertlib.ocr_engine_caution(args.ocr, options.ocr_engine)
     if caution:
         print(f"Note: {caution}")
-    print(f"Converting {input_path.name} to {args.to} (this can take a while)...")
+    targets = tuple(args.to) if args.to else convertlib.DEFAULT_TARGETS
+    out_dir = args.output or Path.cwd()
+    print(
+        f"Converting {input_path.name} to {', '.join(targets)} "
+        "(this can take a while)..."
+    )
     started = time.time()
     produced = convertlib.convert(
         input_path,
         converter,
-        to=args.to,
+        to=targets,
         ocr=args.ocr,
         ocr_engine=options.ocr_engine,
         ocr_lang=options.ocr_lang,
         device=options.device,
         images=options.images or "placeholder",
         timeout=args.timeout,
-        work_dir=args.keep,
+        work_dir=out_dir,
     )
-    print(f"Converted in {time.time() - started:.1f}s: {produced}")
+    print(f"Converted in {time.time() - started:.1f}s:")
+    for path in produced:
+        print(f"  {path}")
 
-    if args.to == "json":
-        # The block stream is the richer contract (page numbers, bounding boxes)
-        # but nothing ingests it yet; hand it over rather than pretend.
-        print(
-            "JSON keeps page numbers and bounding boxes, which the Markdown path "
-            "drops. dokey does not ingest the block stream yet -- re-run with "
-            "--to md to build a lake."
+    render = next((path for path in produced if path.suffix == ".md"), None)
+    if not args.ingest:
+        # Converting a document and taking it apart are separate acts. The
+        # conversion is the product here; the next command is printed rather
+        # than run, so the slow step is never repeated to reach the fast one.
+        if render is not None:
+            print()
+            print("Unitize it into a searchable lake with:")
+            print(f'  dokey auto "{render}"')
+            if any(path.suffix == ".json" for path in produced):
+                print(
+                    "  (the block stream beside it gives the sections their "
+                    "real pages)"
+                )
+        return
+
+    if render is None:
+        raise SystemExit(
+            "Nothing to ingest: the lake is built from the Markdown render, so "
+            "ask for --to md as well."
         )
-        return
-    if args.no_ingest:
-        return
-
     output_dir = getattr(args, "output_dir", None) or _default_lake_dir(input_path)
-    markdown = produced.read_text(encoding="utf-8")
-    print(f"{produced.name}: Markdown from converter ({len(markdown)} chars)")
+    markdown = render.read_text(encoding="utf-8")
+    print(f"{render.name}: Markdown from converter ({len(markdown)} chars)")
     _ingest_markdown(
         markdown,
         input_path=input_path,  # keep the *source* document under raw/
@@ -1651,7 +1704,11 @@ def run_convert(args: argparse.Namespace) -> None:
         max_level=getattr(args, "outline_max_level", None),
         profile=getattr(args, "profile", "auto"),
         write_items=not getattr(args, "no_items", False),
-        source_blocks=getattr(args, "blocks", None) or blockslib.find_source_blocks(input_path),
+        source_blocks=(
+            getattr(args, "blocks", None)
+            or next((path for path in produced if path.suffix == ".json"), None)
+            or blockslib.find_source_blocks(input_path)
+        ),
     )
 
 

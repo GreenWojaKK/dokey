@@ -356,13 +356,32 @@ or an OCR server:
 ```powershell
 pip install dokey[docling]     # or: pip install docling — either is found
 dokey convert                  # show the resolved converter
-dokey convert "scan.pdf"       # convert, unitize, index
-dokey auto "scan.pdf"          # same thing: auto detects the missing text layer
+dokey convert "scan.pdf"       # convert; writes scan.md + scan.json here
+dokey convert "scan.pdf" --ingest   # …and unitize it into a lake
+dokey auto "scan.pdf"          # ingest, converting on the way if it has to
 ```
 
 The `docling` extra is a convenience, not a coupling: dokey never imports
 Docling, it invokes it as a separate process, and a `docling` already on PATH
-works identically. `pip install dokey` stays a pypdf-sized install.
+works identically. `pip install dokey` stays a pypdf-sized install. **Nothing
+has to be configured for it to be used**: dokey looks for the converter on
+PATH and then in the interpreter running dokey, so a `pip install docling` is
+the whole setup — from the CLI, from `dokey auto`, and from the web UI, which
+says which converter it found before you add a book. `dokey convert --set` is
+there for a converter that is somewhere else entirely, not as a step.
+
+**Converting a document and taking it apart are separate acts**, so `dokey
+convert` does the first and stops. It writes the render and the block stream
+and prints the command that would unitize them. Conversion is the slow half —
+minutes on a scanned book — and pinning it to a lake build means repeating it
+whenever the unitizing is what you want to redo. `--ingest` asks for both in
+one go.
+
+Both formats come out by default because they come out of one parse: `--to md`
+is the readable render, `--to json` the block stream that keeps page numbers
+and bounding boxes, and dokey's own page recovery looks for the JSON beside
+the Markdown it reads. Ask for one with `--to md` alone if the other is not
+wanted.
 
 Two defaults are set from measurement rather than left to the converter:
 
@@ -378,11 +397,10 @@ Two defaults are set from measurement rather than left to the converter:
 
 `dokey auto` hands a PDF over only on the strong signal — at least half its
 pages are images carrying no text. Sparse-but-real text stays on the pypdf path;
-`--convert always` / `--convert never` override the judgement either way.
-
-`--to json` gets Docling's block stream instead of Markdown, which keeps the
-page numbers and bounding boxes a render drops. dokey does not ingest that
-stream yet; the Markdown path is what builds a lake today.
+`--convert always` / `--convert never` override the judgement either way, and
+the web UI offers the same three choices under **Advanced overrides**. When
+`dokey auto` does convert, it takes both formats too, so the sections of a
+scanned book get the pages the converter recorded rather than synthetic ones.
 
 ## Korean HWP / HWPX
 

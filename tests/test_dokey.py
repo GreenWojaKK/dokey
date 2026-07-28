@@ -1912,6 +1912,56 @@ class OutlineCoverageTests(unittest.TestCase):
         self.assertTrue(divides_document(entries, 10, count_tail=False))
 
 
+class MentionTests(unittest.TestCase):
+    """Where a tag-shaped identifier occurs, addressed like a clause."""
+
+    @staticmethod
+    def _sections(*bodies: str) -> list:
+        from dokey.mdunit import Section
+
+        return [
+            Section(order=index, level=1, title=f"{index}. 설비", parent="설비", body=body)
+            for index, body in enumerate(bodies, start=1)
+        ]
+
+    def test_it_addresses_each_occurrence(self) -> None:
+        from dokey import mentions
+
+        found, report = mentions.find(
+            self._sections("| T-101 | 저장탱크 | FRP |\n| P-201 | 이송펌프 |")
+        )
+        self.assertEqual([item.tag for item in found], ["T-101", "P-201"])
+        self.assertEqual(found[0].section_index, 1)
+        self.assertEqual(found[0].page, 1)
+        self.assertIn("저장탱크", found[0].context)
+        self.assertEqual(report.mentions, 2)
+
+    def test_a_document_number_is_not_a_mention(self) -> None:
+        from dokey import mentions
+
+        # A standard prints its own number in the running header of every
+        # page; counting those was the loudest false positive measured.
+        found, _ = mentions.find(
+            self._sections("KOSHA GUIDE M-181 - 2014 목재가공용 루터기"), "M-181-2014"
+        )
+        self.assertEqual(found, [])
+
+    def test_the_filename_corroborates_what_the_text_says(self) -> None:
+        from dokey import mentions
+
+        found, _ = mentions.find(
+            self._sections("T-101 파손 확인, P-201 정상"),
+            "20240315_부서명_T-101_사건",
+            ("T-101",),
+        )
+        by_tag = {item.tag: item for item in found}
+        # The document is named for T-101 and mentions it: the name is not
+        # what makes it a tank, but a consumer sorting equipment from alloy
+        # grades will want the corroborated ones first.
+        self.assertTrue(by_tag["T-101"].named)
+        self.assertFalse(by_tag["P-201"].named)
+
+
 class FigureCaptionTests(unittest.TestCase):
     """A caption names something other than itself: above it, or below it."""
 

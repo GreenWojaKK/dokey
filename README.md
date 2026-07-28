@@ -105,6 +105,25 @@ figures simply have no caption. Note the division of labour — whether a block
 *is* a caption is the converter's call (a lexical judgement); dokey only decides
 what it points at (a geometric one).
 
+`silver/mentions.jsonl` records **where a tag-shaped identifier occurs**, with
+the address of the passage it occurs in. A plant's documents are held together
+by tags: `T-101` is a tank, and the sentence saying it was damaged, the sheet
+listing its material and the quotation pricing its repair share nothing else —
+not a title, not a heading, not a vocabulary. dokey records the occurrences and
+their addresses and stops there; that T-101 *is* a tank, or that this document
+is about it, are readings of the words and stay on the consumer's side.
+
+Recognition is by form — a short letter code, a hyphen, a number, an optional
+item letter — with two form-level guards, both measured: a following year makes
+it a document number (`M-181 - 2014`), and a document's own number, printed in
+its running header on every page, is not a mention of equipment. Over 866
+standards containing no plant tags at all, that leaves 662 hits in 128
+documents, and what remains is honestly tag-shaped: alloy grades (`C-276`,
+`SA-517`), product names (`Triton X-100`), item codes (`E-01`) — and real
+equipment tags (`P-110`). Separating those needs a plant's tag registry, which
+dokey does not have. What it can do for free is corroborate: a tag the document
+is *named* for and also mentions is marked `in_document_name`.
+
 `silver/document.json` records what the document's **own filename** states. In
 the corpus this was built for, the filename is not decoration — it is where the
 metadata lives: `20240315_부서명_T-101_설비명_사건_문서종류_rev1.2.xlsx`

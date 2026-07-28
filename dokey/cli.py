@@ -21,6 +21,7 @@ from . import figures as figureslib
 from . import folios as folioslib
 from . import hwp as hwplib
 from . import mdunit
+from . import mentions as mentionslib
 from . import ocr as ocrlib
 from . import paths as pathslib
 from . import profiles as profileslib
@@ -1496,8 +1497,26 @@ def _ingest_markdown(
     print(f"Wrote unitize report: {report_path}")
 
     _write_document_name(output_dir, input_path)
+    _write_mentions(sections, output_dir, input_path)
 
     _finish_lake(sections, ranges, output_dir)
+
+
+def _write_mentions(sections: list, output_dir: Path, source: Path) -> None:
+    """Record where tag-shaped identifiers occur, with the address of each.
+
+    A plant's documents are joined by their tags, not by their words: the
+    sentence saying T-101 was damaged, the sheet listing its material and the
+    quotation pricing its repair share nothing else. dokey records the
+    occurrences and their addresses; what the tag denotes stays a question for
+    whoever holds the tag registry.
+    """
+    named = tuple(item.text for item in docnamelib.read(source).tags)
+    found, report = mentionslib.find(sections, source.stem, named)
+    if not found:
+        return
+    path = mentionslib.write_mentions(output_dir, found)
+    print(f"Wrote mentions: {path} ({report.summary()})")
 
 
 def _finish_lake(sections: list, ranges: list, output_dir: Path) -> None:
@@ -1566,6 +1585,7 @@ def _write_sections_lake(
         print(f"Wrote ingest report: {report_path}")
 
     _write_document_name(output_dir, input_path)
+    _write_mentions(sections, output_dir, input_path)
     _finish_lake(sections, ranges, output_dir)
 
 

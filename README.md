@@ -415,6 +415,33 @@ the web UI offers the same three choices under **Advanced overrides**. When
 `dokey auto` does convert, it takes both formats too, so the sections of a
 scanned book get the pages the converter recorded rather than synthetic ones.
 
+## Spreadsheets: one sheet, one unit
+
+```powershell
+dokey auto "20240315_부서명_T-101_설비명_사건_문서종류_rev1.2.xlsx"
+```
+
+A spreadsheet is not prose, and the heading unitizer must not be pointed at
+one. Converted, a workbook comes back as a stack of tables and nothing else —
+no headings at all — so the prose path would make the whole workbook a single
+section. Worse, its defences would misfire: a row that repeats on three sheets
+looks exactly like a running header to a rule that drops short lines recurring
+across a document, and dropping a row of a spreadsheet is losing data, not
+furniture.
+
+So sheets are unitized directly. The converter numbers sheets as pages, and
+that is the whole of the structure a workbook has: **one sheet is one section,
+and its page number is its own** — sheet 2 really is page 2, not a synthetic
+stand-in. Tables are rendered from the block stream rather than taken from the
+converter's Markdown, because only the block stream says which sheet a table
+came from.
+
+The sheet's *name* is the one thing the conversion drops, and it is the only
+title a sheet has. dokey reads it back out of the workbook itself — an `.xlsx`
+is a zip whose `xl/workbook.xml` lists the sheets in order, and the standard
+library opens both, so this costs no dependency. A format that keeps its names
+elsewhere (legacy `.xls`, `.ods`) gets numbered sheets and says so.
+
 ## Korean HWP / HWPX
 
 dokey ingests Hancom word-processor files — `.hwp` (the binary v5 format) and

@@ -1912,6 +1912,94 @@ class OutlineCoverageTests(unittest.TestCase):
         self.assertTrue(divides_document(entries, 10, count_tail=False))
 
 
+class SpreadsheetTests(unittest.TestCase):
+    """A workbook's unit is the sheet, and its title is the sheet's name."""
+
+    def _blocks(self, tmp: Path) -> Path:
+        """A block stream shaped like the converter's: tables tagged by sheet."""
+        document = {
+            "tables": [
+                {
+                    "prov": [{"page_no": 1}],
+                    "data": {"grid": [
+                        [{"text": "품목"}, {"text": "수량"}],
+                        [{"text": "전기안전시험"}, {"text": "1"}],
+                    ]},
+                },
+                {
+                    "prov": [{"page_no": 2}],
+                    "data": {"grid": [
+                        [{"text": "태그"}, {"text": "설비명"}],
+                        [{"text": "T-101"}, {"text": "저장탱크"}],
+                    ]},
+                },
+            ],
+            "texts": [],
+        }
+        path = tmp / "book.json"
+        path.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+        return path
+
+    def test_one_sheet_is_one_section_named_by_the_workbook(self) -> None:
+        from dokey import sheets
+
+        with tempfile.TemporaryDirectory() as tmp:
+            sections, report = sheets.unitize(
+                self._blocks(Path(tmp)), ["견적서", "설비목록"]
+            )
+        self.assertEqual([s.title for s in sections], ["견적서", "설비목록"])
+        # The sheet's number is its page: sheet 2 really is page 2.
+        self.assertEqual([s.order for s in sections], [1, 2])
+        self.assertIn("T-101", sections[1].body)
+        self.assertEqual(report.sheets, 2)
+        self.assertEqual(report.named, 2)
+        self.assertEqual(report.rows, 4)
+
+    def test_sheets_are_numbered_when_the_workbook_will_not_say(self) -> None:
+        from dokey import sheets
+
+        with tempfile.TemporaryDirectory() as tmp:
+            sections, report = sheets.unitize(self._blocks(Path(tmp)), [])
+        self.assertEqual([s.title for s in sections], ["Sheet 1", "Sheet 2"])
+        self.assertEqual(report.named, 0)
+        self.assertTrue(report.notes)
+
+    def test_a_cell_cannot_break_the_row_it_sits_in(self) -> None:
+        from dokey import sheets
+
+        table = sheets.markdown_table(
+            [[{"text": "a|b"}, {"text": "two\nlines"}], [{"text": "1"}]]
+        )
+        rows = table.splitlines()
+        self.assertEqual(rows[0], r"| a\|b | two lines |")
+        # A short row is padded, not left ragged.
+        self.assertEqual(rows[-1], "| 1 |  |")
+
+    def test_the_workbook_names_its_own_sheets(self) -> None:
+        from dokey import sheets
+
+        try:
+            from openpyxl import Workbook
+        except ImportError:  # pragma: no cover - environment dependent
+            self.skipTest("openpyxl not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            book = Path(tmp) / "book.xlsx"
+            workbook = Workbook()
+            workbook.active.title = "견적서"
+            workbook.create_sheet("설비목록")
+            workbook.save(book)
+            self.assertEqual(sheets.sheet_names(book), ["견적서", "설비목록"])
+            self.assertTrue(sheets.is_spreadsheet(book))
+
+    def test_a_file_that_is_not_a_workbook_yields_no_names(self) -> None:
+        from dokey import sheets
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "not.xlsx"
+            path.write_bytes(b"not a zip")
+            self.assertEqual(sheets.sheet_names(path), [])
+
+
 @unittest.skipUnless(_HAS_FITZ, "PyMuPDF (optional [ocr] extra) not installed")
 class DriftSmokeTestTests(unittest.TestCase):
     """The per-section smoke test pins sections a drifting offset misplaces."""

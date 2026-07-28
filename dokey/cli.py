@@ -24,6 +24,7 @@ from . import ocr as ocrlib
 from . import paths as pathslib
 from . import profiles as profileslib
 from . import offset as offsetlib
+from . import sheets as sheetslib
 from . import outline as outlinelib
 from . import search as searchlib
 from .manifest import write_manifest_rows, write_manifests, write_toc
@@ -630,6 +631,8 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "auto":
         if hwplib.is_hwp(args.input):
             run_hwp_ingest(args)
+        elif sheetslib.is_spreadsheet(args.input):
+            run_sheet_ingest(args)
         elif mdunit.is_markdown(args.input):
             run_md_ingest(args)
         else:
@@ -637,6 +640,8 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "ingest":
         if hwplib.is_hwp(args.input):
             run_hwp_ingest(args)
+        elif sheetslib.is_spreadsheet(args.input):
+            run_sheet_ingest(args)
         elif mdunit.is_markdown(args.input):
             run_md_ingest(args)
         else:
@@ -1578,6 +1583,59 @@ def run_hwp_ingest(args: argparse.Namespace) -> None:
         max_level=getattr(args, "outline_max_level", None),
         profile=getattr(args, "profile", "auto"),
         write_items=not getattr(args, "no_items", False),
+    )
+
+
+def run_sheet_ingest(args: argparse.Namespace) -> None:
+    """Ingest a spreadsheet: convert it, then take one section per sheet.
+
+    The conversion is the layout converter's job -- merged cells, formats, the
+    legacy binary formats -- and the unitizing is dokey's. What comes back is
+    tables tagged with the sheet they came from; what a workbook has no room
+    for is a heading, so the prose unitizer is not involved at all.
+    """
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
+    input_path = args.input
+    if not input_path.is_file():
+        raise SystemExit(f"Spreadsheet not found: {input_path}")
+    output_dir = getattr(args, "output_dir", None) or _default_lake_dir(input_path)
+
+    blocks = getattr(args, "blocks", None) or blockslib.find_source_blocks(input_path)
+    if blocks is None:
+        converter, source = convertlib.resolve_converter()
+        if converter is None:
+            raise SystemExit(convertlib.install_hint())
+        print(f"{input_path.name}: converting with {converter.display()} ({source})")
+        options = convertlib.load_options()
+        started = time.time()
+        produced = convertlib.convert(
+            input_path,
+            converter,
+            to=("json",),  # the block stream says which sheet each table is on
+            ocr=False,
+            device=options.device,
+            images=options.images or "placeholder",
+            timeout=getattr(args, "timeout", convertlib.DEFAULT_TIMEOUT),
+        )
+        blocks = next((path for path in produced if path.suffix == ".json"), None)
+        if blocks is None:
+            raise SystemExit("The converter produced no block stream to read.")
+        print(f"Converted in {time.time() - started:.1f}s: {blocks.name}")
+
+    names = sheetslib.sheet_names(input_path)
+    sections, report = sheetslib.unitize(blocks, names)
+    if not sections:
+        raise SystemExit(
+            "No sheets to ingest: the converter found no tables in this workbook."
+        )
+    print(f"Sheets: {report.summary()}")
+    _write_sections_lake(
+        sections,
+        input_path=input_path,
+        output_dir=output_dir,
+        source_label="spreadsheet",
+        extra_report={"sheets": report.as_dict()},
     )
 
 

@@ -16,6 +16,7 @@ from . import blocks as blockslib
 from . import bodytoc
 from . import convert as convertlib
 from . import detect as detectlib
+from . import docname as docnamelib
 from . import folios as folioslib
 from . import hwp as hwplib
 from . import mdunit
@@ -939,6 +940,8 @@ def ingest_entries(
     toc_path = write_toc(output_dir, entries)
     print(f"Wrote table of contents: {toc_path} ({len(entries)} entries)")
 
+    _write_document_name(output_dir, input_path)
+
     csv_path, json_path, jsonl_path = write_manifests(output_dir, ranges)
     print(f"Wrote section CSV: {csv_path}")
     print(f"Wrote section JSON: {json_path}")
@@ -1279,6 +1282,26 @@ def _printed_toc_if_better(
     return printed
 
 
+def _write_document_name(output_dir: Path, source: Path) -> None:
+    """Record what the source document's own filename states.
+
+    Where a document comes from an organization that encodes date, equipment
+    tag and revision in the filename, that is metadata the text does not
+    repeat -- and a lake that keeps only the text loses it.
+    """
+    path = docnamelib.write_document_json(output_dir, source)
+    read = docnamelib.read(source)
+    stated = []
+    if read.dates:
+        stated.append(f"{len(read.dates)} date(s)")
+    if read.tags:
+        stated.append(f"tag {', '.join(item.text for item in read.tags)}")
+    if read.revision:
+        stated.append(f"revision {read.revision.text}")
+    detail = ", ".join(stated) if stated else "no date, tag or revision in the name"
+    print(f"Wrote document name: {path} ({detail})")
+
+
 def _write_section_pages(sections: list, output_dir: Path) -> Path:
     """One synthetic bronze page per section: its sequence number and text."""
     pages_path = output_dir / "bronze" / "pages.jsonl"
@@ -1456,6 +1479,17 @@ def _ingest_markdown(
     report_path = _write_unitize_report(result.report, output_dir, input_path)
     print(f"Wrote unitize report: {report_path}")
 
+    _write_document_name(output_dir, input_path)
+
+    _finish_lake(sections, ranges, output_dir)
+
+
+def _finish_lake(sections: list, ranges: list, output_dir: Path) -> None:
+    """Write the manifest, the per-section artifacts and the index, and sign off.
+
+    The last three steps of every flow-document ingest, whatever decided the
+    sections: a heading sweep of a render, or the sheets of a workbook.
+    """
     csv_path, json_path, jsonl_path = write_manifests(output_dir, ranges)
     print(f"Wrote section CSV: {csv_path}")
     print(f"Wrote section JSON: {json_path}")
@@ -1473,6 +1507,50 @@ def _ingest_markdown(
     print("\nDone. Try:")
     print(f'  dokey search "keyword" --lake "{output_dir}"')
     print(f'  dokey ui --lake "{output_dir}"')
+
+
+def _write_sections_lake(
+    sections: list,
+    *,
+    input_path: Path,
+    output_dir: Path,
+    source_label: str,
+    extra_report: dict | None = None,
+) -> None:
+    """Write a lake from sections that were decided without a heading sweep.
+
+    A sheet is its own page, so the synthetic page numbering -- one page per
+    section, in order -- is not a stand-in here: sheet 2 really is page 2.
+    """
+    ranges = mdunit.build_section_ranges(sections, output_dir, None)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    raw_path = copy_raw_pdf(input_path, output_dir)  # copies any file under raw/
+    print(f"Wrote raw {source_label}: {raw_path}")
+
+    pages_path = _write_section_pages(sections, output_dir)
+    print(f"Wrote section text: {pages_path}")
+
+    outline = mdunit.derive_outline(sections)
+    toc_path = write_toc(output_dir, outline)
+    print(f"Wrote table of contents: {toc_path} ({len(outline)} entries)")
+
+    if extra_report:
+        report_path = output_dir / "bronze" / "ingest.json"
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(
+            json.dumps(
+                {"source": input_path.name, **extra_report},
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        print(f"Wrote ingest report: {report_path}")
+
+    _write_document_name(output_dir, input_path)
+    _finish_lake(sections, ranges, output_dir)
 
 
 def run_hwp_ingest(args: argparse.Namespace) -> None:

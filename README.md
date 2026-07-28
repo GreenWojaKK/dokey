@@ -84,6 +84,19 @@ bound the whole range and `char_own_end` bounds the item's own words. A rung
 the document skips is counted, never invented. Turn the file off with
 `--no-items`.
 
+`silver/document.json` records what the document's **own filename** states. In
+the corpus this was built for, the filename is not decoration — it is where the
+metadata lives: `20240315_부서명_T-101_설비명_사건_문서종류_rev1.2.xlsx`
+gives a date, an owning department, an equipment tag, the equipment's name and
+material, what happened to it, a document-type code and a revision, none of
+which need appear inside the file. Three of those are claimed, and each on
+**form** alone: eight digits that make a real calendar date (found even glued to
+a word, as in `요약20240315`), letters-dash-digits in the shape a plant uses for
+tag numbers, and a revision marker. Everything else is kept whole and in order
+as `tokens` and left uninterpreted — `부서명` is a department to a reader who
+knows the organization, and dokey does not. A consumer with that vocabulary can
+map the tokens; one without still has the name as it was written.
+
 An artifact is named for its section and nothing else: order, page ranges, and
 the section's ordinal are manifest fields, so repeating them in the path only
 made it longer. Two sections that really do share a title — a compound document

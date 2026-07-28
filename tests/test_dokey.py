@@ -1833,6 +1833,47 @@ class AutoCommandTests(unittest.TestCase):
         self.assertEqual(by_title["1.1 Alpha"]["pdf_start_page"], 3)
 
 
+class DocumentNameTests(unittest.TestCase):
+    """The filename is metadata in this corpus; only its recognizable parts."""
+
+    def test_it_reads_the_date_tag_and_revision_a_name_states(self) -> None:
+        from dokey import docname
+
+        read = docname.read(
+            "20240315_부서명_T-101_설비명_사건_문서종류_rev1.2.xlsx"
+        )
+        self.assertEqual([item.value for item in read.dates], ["2024-03-15"])
+        self.assertEqual([item.text for item in read.tags], ["T-101"])
+        self.assertEqual(read.revision.value, "1.2")
+        # Everything else is kept as written, in order, and not interpreted:
+        # "부서명" is a department to a reader who knows the organization.
+        self.assertEqual(read.tokens[1], "부서명")
+        self.assertIn("사건", read.tokens)
+
+    def test_a_date_glued_to_a_word_is_still_a_date(self) -> None:
+        from dokey import docname
+
+        read = docname.read("샘플문서 요약20240315.xlsx")
+        self.assertEqual([item.value for item in read.dates], ["2024-03-15"])
+        self.assertEqual(read.tokens, ["샘플문서", "요약20240315"])
+
+    def test_eight_digits_that_are_not_a_date_are_not_claimed(self) -> None:
+        from dokey import docname
+
+        self.assertEqual(docname.read("도면 10120304 표지.pdf").dates, [])
+
+    def test_a_document_number_is_not_an_equipment_tag(self) -> None:
+        from dokey import docname
+
+        # C-79-2015 is a KOSHA guide number wearing the shape of a tag; the
+        # third dashed part is what separates them.
+        self.assertEqual(docname.read("KOSHA GUIDE C-79-2015.pdf").tags, [])
+        self.assertEqual(
+            [item.text for item in docname.read("설비_HX-3001A_점검.xlsx").tags],
+            ["HX-3001A"],
+        )
+
+
 class OutlineCoverageTests(unittest.TestCase):
     """An outline is asked to show that it divides the document."""
 

@@ -787,6 +787,94 @@ class CoordinateTocTests(unittest.TestCase):
         # The stray continuation fragment must not become its own entry.
         self.assertNotIn("Wraps To A Second Line", {e.title for e in entries})
 
+    def _report_toc_pdf(self, tmp: Path) -> Path:
+        """A Korean report's contents: the three shapes measured on one.
+
+        Front matter folioed in Roman numerals; division headers that carry no
+        page number of their own; and, on the page after, the list of tables,
+        set in the same two columns under the same running head.
+        """
+        import fitz
+
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        # The built-in Korean font: the base-14 fonts have no Hangul, and text
+        # that does not render does not extract either.
+        page.insert_text((72, 40), "차 례", fontsize=14, fontname="korea")
+
+        def row(y, x, text):
+            page.insert_text((x, y), text, fontsize=11, fontname="korea")
+
+        row(80, 96, "요 약····················ⅴ")
+        row(110, 96, "제1장 서론")
+        row(130, 132, "1. 연구의 배경····3")
+        row(150, 132, "2. 주요 개념····5")
+        # 0.4pt to the left of the first chapter: the jitter of setting the
+        # same tier twice, which is not a level.
+        row(180, 95.6, "제2장 분석")
+        row(200, 132, "1. 일반 현황····17")
+        row(220, 132, "2. 배출량 분석····28")
+
+        tables = doc.new_page(width=612, height=792)
+        tables.insert_text((72, 40), "차 례", fontsize=14, fontname="korea")
+        for index in range(6):
+            tables.insert_text(
+                (96, 80 + index * 20),
+                f"<표 2-{index + 1}> 배출량 현황····{18 + index}",
+                fontsize=11,
+                fontname="korea",
+            )
+        path = tmp / "report_toc.pdf"
+        doc.save(str(path))
+        doc.close()
+        return path
+
+    def test_a_division_header_is_an_entry_not_a_wrapped_title(self) -> None:
+        from dokey.tocpage import read_page_toc
+
+        with tempfile.TemporaryDirectory() as tmp:
+            entries = read_page_toc(self._report_toc_pdf(Path(tmp)))
+        by_title = {e.title: e for e in entries}
+
+        # The chapter's opening clause keeps its own row and its own page,
+        # rather than being absorbed into the header above it and then dropped
+        # with it as a parent.
+        self.assertIn("1. 연구의 배경", by_title)
+        self.assertEqual(by_title["1. 연구의 배경"].page, 3)
+        self.assertEqual(by_title["1. 연구의 배경"].parent, "제1장 서론")
+        self.assertEqual(by_title["1. 일반 현황"].parent, "제2장 분석")
+        # Sub-point drift in the header's own indentation is not a level.
+        self.assertEqual(
+            by_title["1. 연구의 배경"].level, by_title["1. 일반 현황"].level
+        )
+
+    def test_roman_front_matter_does_not_stick_to_the_next_entry(self) -> None:
+        from dokey.tocpage import read_page_toc
+
+        with tempfile.TemporaryDirectory() as tmp:
+            entries = read_page_toc(self._report_toc_pdf(Path(tmp)))
+
+        # The summary is folioed ⅴ, on a series the body's page numbers do not
+        # share, so it is left out -- but recognized, so it does not ride along
+        # on the title below it.
+        self.assertNotIn("요 약", {e.title for e in entries})
+        for entry in entries:
+            self.assertNotIn("약", entry.title)
+
+    def test_a_list_of_tables_is_not_a_table_of_contents(self) -> None:
+        from dokey.tocpage import find_toc_pages, read_page_toc
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._report_toc_pdf(Path(tmp))
+            entries = read_page_toc(path)
+
+            import fitz
+
+            with fitz.open(str(path)) as doc:
+                self.assertEqual(find_toc_pages(doc), [0])
+
+        self.assertFalse([e for e in entries if e.title.startswith("<표")])
+
     def test_margin_drift_keeps_levels_consistent(self) -> None:
         from dokey.tocpage import read_page_toc
 

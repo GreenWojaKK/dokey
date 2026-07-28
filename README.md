@@ -57,6 +57,19 @@ before giving up, dokey reads the headings off the body and takes the page each
 was found on. Those pages are physical, like an outline's, so no page offset
 applies and no smoke test is needed to place them.
 
+Reading a contents page means reading a page laid out for a person, and three
+things on it are not title-and-page pairs. A **division header** (`제1장 서론`)
+carries no page number of its own, which made it read as the first line of a
+wrapped title: it absorbed the clause below it, and the two were then dropped
+together as a parent, so every chapter's opening clause went missing. It is now
+an entry in its own right, taking the page of the first entry beneath it.
+**Front matter** is folioed in Roman numerals (`요 약 ····· ⅴ`), a series that
+shares no scale with the body's Arabic pages, so such a row is recognized in
+order to be left out rather than glued onto the title below it. And the **list
+of tables** after the contents is set in the same two columns under the same
+running head; what separates the two is what the rows name — an object inside
+the text (`<표 2-1>`) rather than a division of it.
+
 `silver/items.jsonl` goes one level finer, for Markdown inputs. A section is
 the unit a reader cites, but it is not the unit a document *addresses*: a
 technical standard addresses a passage by a ladder of numbering series

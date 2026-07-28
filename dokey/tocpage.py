@@ -53,6 +53,26 @@ _SECTION_NO = re.compile(r"^(\d+(?:\.\d+)+|\d+)\b")
 # Korean structural prefixes: 제N편/부/장 mark the chapter tier and 제N절/항
 # one deeper ("제1장 사업 개요" > "제2절 추진배경 및 필요성").
 _KO_STRUCT = re.compile(r"^제\s?\d+\s?(?P<unit>[편부장절항])(?=\s|$)")
+# A page number set in Roman numerals, which is how front matter is folioed
+# ("요 약···········ⅴ"). Both the Unicode number forms and the ASCII spelling
+# occur; the ASCII one is matched in its canonical form only, so a title ending
+# in a word that happens to be Roman letters ("DVD") is not read as a folio.
+_ROMAN_UNICODE = re.compile(r"^[Ⅰ-ↂⅰ-ↄ]+$")
+_ROMAN_ASCII = re.compile(
+    r"^(?=[ivxlcdm])m{0,3}(?:cm|cd|d?c{0,3})(?:xc|xl|l?x{0,3})(?:ix|iv|v?i{0,3})$",
+    re.IGNORECASE,
+)
+# The same row with its leader fused into the title's text run ("요 약·····ⅴ").
+_FUSED_ROMAN_TAIL = re.compile(
+    r"[.·•․‥…\-_]{2,}(?P<page>[A-Za-zⅠ-ↄ]{1,7})$"
+)
+# A row that names an object rather than a division: <표 2-1>, <그림 3-4>,
+# Table 5. A page of these is a list of tables or figures, which in a Korean
+# report follows the contents under the same "차례 / CONTENTS" running head and
+# so reads as a contents page to any test that merely counts title-and-page rows.
+_OBJECT_LABEL = re.compile(
+    r"^[<〈《【\[(]?\s*(?:표|그림|사진|부표|부도|Table|Figure|Fig\.?|Photo)\s*[\d<\[]"
+)
 # Titles that survive stripping must still contain a letter or CJK character;
 # this drops stray numeric rows (folios, figure numbers) that end in an integer.
 _HAS_WORD = re.compile(r"[^\W\d_]", re.UNICODE)
@@ -64,6 +84,12 @@ _TOC_HEADERS = {
     "목 차",
     "차 례",
 }
+
+
+# How far apart two entries may start and still be the same indentation tier.
+# A real indent step is an em or more; this is the jitter of setting the same
+# tier twice.
+_TIER_TOLERANCE = 3.0
 
 
 @dataclass(frozen=True)
@@ -155,6 +181,55 @@ def _is_header_fragment(text: str) -> bool:
     return text.strip().lower() in _TOC_HEADERS
 
 
+def _is_roman_folio(token: str) -> bool:
+    return bool(_ROMAN_UNICODE.match(token) or _ROMAN_ASCII.match(token))
+
+
+def _is_front_matter_row(tokens: list[str]) -> bool:
+    """A contents row whose folio is a Roman numeral, i.e. front matter.
+
+    The front matter runs on its own folio series, and that series shares no
+    scale with the body's Arabic one: the ⅴ of a summary and the 5 of a clause
+    are different pages. Such a row is therefore recognized in order to be left
+    out. Recognizing it is what matters -- unrecognized, it reads as a line
+    without a page number and is glued onto the title of the first real entry
+    below it, which is how ``주요 내용 및 정책제안···ⅲ`` came to be part of the
+    title of chapter 1's opening clause.
+    """
+    if not tokens:
+        return False
+    tail = tokens[-1]
+    fused = _FUSED_ROMAN_TAIL.search(tail)
+    if fused is not None:
+        return _is_roman_folio(fused.group("page"))
+    # A bare Roman tail counts only behind a dot leader. Without one, a title
+    # ending on a word that happens to spell a numeral ("Part I") would be read
+    # as a folio and the line dropped.
+    return (
+        len(tokens) > 2
+        and _is_roman_folio(tail)
+        and any(_LEADER.match(token) for token in tokens[:-1])
+    )
+
+
+def _is_division_header(text: str) -> bool:
+    """A line that heads a division and carries no page number of its own.
+
+    ``제1장 서론`` standing alone, with the chapter's clauses numbered beneath
+    it, is an entry -- the topmost one -- and not the first line of a wrapped
+    title. Read as a wrapped title it swallows the clause below it, and the two
+    together are then dropped as a parent, so the chapter's opening clause
+    vanishes from the manifest.
+    """
+    return _KO_STRUCT.match(text.strip()) is not None
+
+
+def _mostly_object_labels(entries: list[_RawEntry]) -> bool:
+    """Whether a page's rows name objects rather than divisions of the text."""
+    labelled = sum(1 for entry in entries if _OBJECT_LABEL.match(entry.title))
+    return labelled * 2 > len(entries)
+
+
 def _page_entries(page) -> list[_RawEntry]:
     """Parse one TOC page's entries, merging wrapped title lines.
 
@@ -162,12 +237,20 @@ def _page_entries(page) -> list[_RawEntry]:
     prefix and merged into the next numbered line (whose page number belongs to
     the whole, wrapped title). The entry's indentation is taken from the first
     (shallowest) physical line, not the continuation.
+
+    A division header (``제3장 국내 정책 동향 분석``) is the exception: it also
+    carries no page number, but it is an entry rather than a prefix, and it
+    takes the page of the first entry beneath it -- which is where the division
+    begins. Opening one also discards whatever was pending, because a new
+    division ends anything the page had been accumulating.
     """
     column_limit = page.rect.width * 0.45
     header_band = page.rect.height * 0.06
     out: list[_RawEntry] = []
     pending: str | None = None
     pending_x0: float | None = None
+    header: str | None = None
+    header_x0: float | None = None
     for line in _line_words(page):
         tokens = [w[4] for w in line]
         x0 = line[0][0]
@@ -180,7 +263,17 @@ def _page_entries(page) -> list[_RawEntry]:
                     title=f"{pending} {entry.title}".strip(),
                     page=entry.page,
                 )
+            if header is not None:
+                out.append(
+                    _RawEntry(x0=round(header_x0, 1), title=header, page=entry.page)
+                )
+                header = None
+                header_x0 = None
             out.append(entry)
+            pending = None
+            pending_x0 = None
+            continue
+        if _is_front_matter_row(tokens):
             pending = None
             pending_x0 = None
             continue
@@ -191,17 +284,33 @@ def _page_entries(page) -> list[_RawEntry]:
             and y0 > header_band
             and not _is_header_fragment(text)
         )
-        if is_fragment:
+        if not is_fragment:
+            pending = None
+            pending_x0 = None
+            continue
+        if _is_division_header(text):
+            header = text
+            header_x0 = x0
+            pending = None
+            pending_x0 = None
+        elif header is not None and abs(x0 - header_x0) <= 2:
+            # The header's own title wrapped: same indentation, no number.
+            header = f"{header} {text}"
+        else:
             pending = text if pending is None else f"{pending} {text}"
             if pending_x0 is None:
                 pending_x0 = x0
-        else:
-            pending = None
-            pending_x0 = None
     return out
 
 
 def _looks_like_toc(page, min_entries: int) -> bool:
+    entries = _page_entries(page)
+    # A list of tables or figures is not a table of contents, however much it
+    # looks like one: it is printed after the contents, under the same running
+    # head, in the same two columns of title and page. What separates them is
+    # what the rows name -- an object inside the text, or a division of it.
+    if entries and _mostly_object_labels(entries):
+        return False
     # A running head can share the top band with the contents title and sort
     # above it (a Korean report's series title sits beside "목 차" a fraction
     # of a point higher), so the header is looked for in the first few visual
@@ -210,7 +319,7 @@ def _looks_like_toc(page, min_entries: int) -> bool:
         text = " ".join(w[4] for w in line).strip().lower()
         if any(text.startswith(h) for h in _TOC_HEADERS):
             return True
-    return len(_page_entries(page)) >= min_entries
+    return len(entries) >= min_entries
 
 
 def find_toc_pages(doc, *, max_scan: int | None = 40, min_entries: int = 6) -> list[int]:
@@ -230,6 +339,20 @@ def find_toc_pages(doc, *, max_scan: int | None = 40, min_entries: int = 6) -> l
     return found
 
 
+def _tier_ranks(positions: list[float]) -> dict[float, int]:
+    """Rank indentations left to right, treating near-equal ones as one tier."""
+    ordered = sorted(set(positions))
+    ranks: dict[float, int] = {}
+    rank = 0
+    previous: float | None = None
+    for x0 in ordered:
+        if previous is not None and x0 - previous > _TIER_TOLERANCE:
+            rank += 1
+        ranks[x0] = rank
+        previous = x0
+    return ranks
+
+
 def _page_level_map(entries: list[_RawEntry]) -> dict[float, int]:
     """Map each indentation tier on a page to a hierarchy level.
 
@@ -239,9 +362,14 @@ def _page_level_map(entries: list[_RawEntry]) -> dict[float, int]:
     the number rather than the absolute x0 makes the levels immune to the
     recto/verso margin drift. Pages with no numbered entry fall back to tier
     rank.
+
+    Entries within ``_TIER_TOLERANCE`` of each other are one tier. Typesetting
+    puts the same tier down a fraction of a point apart -- three chapter
+    headers on one page measured 99.0, 99.0 and 98.6 -- and read literally that
+    jitter becomes a level, putting sibling chapters at different depths.
     """
-    tiers = sorted({entry.x0 for entry in entries})
-    rank = {x0: index for index, x0 in enumerate(tiers)}
+    rank = _tier_ranks([entry.x0 for entry in entries])
+    tiers = sorted(rank)
     anchor: tuple[int, int] | None = None  # (depth, rank)
     for entry in entries:
         depth = _num_depth(entry.title)

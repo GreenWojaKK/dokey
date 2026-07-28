@@ -361,10 +361,17 @@ def _looks_like_divider(texts: _PageTexts, page_number: int, all_titles: list[st
     A Korean report's part divider carries the chapter's full section roster;
     matching a section start against it would pin the section to the divider
     instead of its first page.
+
+    Titles are counted once each. A document that heads every chapter with the
+    same word -- three chapters opening on ``1. 개요`` is the measured case --
+    repeats that title in the roster, and counting the repeats made each of
+    those chapters' opening pages look like a divider: the section was pushed
+    two pages past its own heading, and the section after it was dragged back
+    onto the same page.
     """
     haystack = texts(page_number)
     hits = 0
-    for title in all_titles:
+    for title in set(all_titles):
         if title and title in haystack:
             hits += 1
             if hits >= _DIVIDER_TITLE_COUNT:

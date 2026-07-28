@@ -1772,6 +1772,18 @@ class DriftSmokeTestTests(unittest.TestCase):
         self.assertEqual(report.verified + report.corrected, 3)
         self.assertEqual(report.unresolved, 0)
 
+    def test_a_repeated_title_does_not_make_a_page_look_like_a_divider(self) -> None:
+        from dokey.offset import _looks_like_divider
+
+        # Three chapters opening on "1. 개요" put that title in the roster three
+        # times. The page below holds one heading, not three, and counting the
+        # roster's repeats pushed the section two pages past its own heading.
+        self.assertFalse(
+            _looks_like_divider(lambda page: "1.개요본문이이어진다", 5, ["1.개요"] * 3)
+        )
+        roster = ["1.개요", "2.컨트롤타워지정", "3.전문연구단운영"]
+        self.assertTrue(_looks_like_divider(lambda page: "".join(roster), 5, roster))
+
 
 @unittest.skipUnless(_HAS_FITZ, "PyMuPDF (optional [ocr] extra) not installed")
 class CleanBreakDetectionTests(unittest.TestCase):

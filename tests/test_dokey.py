@@ -1502,6 +1502,39 @@ class AutoCommandTests(unittest.TestCase):
         # Beta (pdf 5), with no shared boundary page.
         self.assertEqual(by_title["1.1 Alpha"]["pdf_end_page"], 4)
 
+    def _book_pdf_with_stray_bookmark(self, path: Path) -> None:
+        """The same book, plus the one bookmark an authoring tool left behind."""
+        import fitz
+
+        self._book_pdf(path)
+        with fitz.open(str(path)) as doc:
+            doc.set_toc([[1, "빈 페이지", 2]])
+            doc.saveIncr()
+
+    def test_a_stray_bookmark_does_not_pass_for_a_table_of_contents(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            pdf = tmp_path / "book.pdf"
+            self._book_pdf_with_stray_bookmark(pdf)
+            lake = tmp_path / "lake"
+
+            main(["auto", str(pdf), "--output-dir", str(lake)])
+
+            rows = [
+                json.loads(line)
+                for line in (lake / "silver" / "sections.jsonl").read_text(
+                    encoding="utf-8"
+                ).splitlines()
+            ]
+        by_title = {row["title"]: row for row in rows}
+        # One bookmark on page 2 of a ten-page book leaves the whole book in
+        # one section, so the printed contents page is read instead -- and it
+        # places the sections exactly where it does without the bookmark.
+        self.assertNotIn("빈 페이지", by_title)
+        self.assertIn("1.1 Alpha", by_title)
+        self.assertEqual(by_title["1.1 Alpha"]["pdf_start_page"], 3)
+        self.assertEqual(by_title["2.1 Gamma"]["pdf_start_page"], 7)
+
     def test_auto_page_offset_flag_overrides_the_estimate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -1519,6 +1552,44 @@ class AutoCommandTests(unittest.TestCase):
             ]
         by_title = {row["title"]: row for row in rows}
         self.assertEqual(by_title["1.1 Alpha"]["pdf_start_page"], 3)
+
+
+class OutlineCoverageTests(unittest.TestCase):
+    """An outline is asked to show that it divides the document."""
+
+    @staticmethod
+    def _entries(pages: list[int]) -> list:
+        from dokey.models import TocEntry
+
+        return [TocEntry(level=0, title=f"Entry {p}", page=p) for p in pages]
+
+    def test_a_single_stray_bookmark_does_not_divide_the_document(self) -> None:
+        from dokey.outline import divides_document, largest_share
+
+        entries = self._entries([2])
+        self.assertFalse(divides_document(entries, 210))
+        self.assertGreater(largest_share(entries, 210), 0.9)
+
+    def test_an_outline_that_covers_the_book_is_kept(self) -> None:
+        from dokey.outline import divides_document
+
+        self.assertTrue(divides_document(self._entries([1, 20, 40, 60, 80]), 100))
+
+    def test_front_matter_before_the_first_entry_is_not_held_against_it(self) -> None:
+        from dokey.outline import divides_document
+
+        # An outline that starts at chapter 1, forty pages in, is doing its job.
+        self.assertTrue(divides_document(self._entries([40, 60, 80]), 100))
+
+    def test_folio_entries_are_measured_without_the_tail(self) -> None:
+        from dokey.outline import divides_document
+
+        # Printed folios say where sections start, not where the book ends, so
+        # the distance from the last one to the last page is the page offset
+        # rather than the size of that section.
+        entries = self._entries([1, 3, 5])
+        self.assertFalse(divides_document(entries, 10))
+        self.assertTrue(divides_document(entries, 10, count_tail=False))
 
 
 @unittest.skipUnless(_HAS_FITZ, "PyMuPDF (optional [ocr] extra) not installed")

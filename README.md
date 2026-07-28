@@ -37,6 +37,17 @@ outline, the printed contents page, the document's own numbered headings, or
 establishes it first and splits from it, so it is the record of how the
 sections were decided.
 
+The first source is checked before it is believed. A bookmark is metadata, and
+metadata is not always about the document: one 210-page report's entire outline
+is a single entry reading `빈 페이지` — "blank page" — pointing at page 2, left
+behind by whoever made the file. Taken at its word it yields one section holding
+the whole book. So an outline is asked to show that it divides the document, and
+if its widest entry governs more than half the pages, dokey reads the printed
+contents page too and prefers that when it has more entries and does divide. The
+test is coverage, not vocabulary: no list of titles can be checked against the
+words a document happens to use, but any table of contents can be checked
+against the thing it claims to describe.
+
 The third source exists because the second one fails on a shape that is
 perfectly readable to a person: **a contents page that lists titles with no
 page numbers.** A reader looking for title-and-page pairs finds no pairs and

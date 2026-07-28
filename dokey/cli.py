@@ -23,6 +23,7 @@ from . import ocr as ocrlib
 from . import paths as pathslib
 from . import profiles as profileslib
 from . import offset as offsetlib
+from . import outline as outlinelib
 from . import search as searchlib
 from .manifest import write_manifest_rows, write_manifests, write_toc
 from .models import TocEntry
@@ -1007,12 +1008,34 @@ def run_auto(args: argparse.Namespace) -> None:
     except ValueError:
         pass
 
+    # An outline that leaves the book in one piece is metadata about the file
+    # rather than a table of contents, so it is asked to show that it divides
+    # the document before it is used.
+    printed_won = False
+    if entries and not outlinelib.divides_document(entries, len(reader.pages)):
+        share = outlinelib.largest_share(entries, len(reader.pages))
+        counted = (
+            "entry leaves" if len(entries) == 1 else f"{len(entries)} entries leave"
+        )
+        print(
+            f"TOC: the embedded outline's {counted} {share:.0%} of the document "
+            "under one heading, which is not a division of it"
+        )
+        printed = _printed_toc_if_better(args, input_pdf, entries, len(reader.pages))
+        if printed:
+            entries = printed
+            printed_won = True
+        else:
+            print("  nothing better on the printed pages; keeping the outline")
+
     # An entry whose page is already a physical PDF page needs no offset and no
     # smoke test: an outline's destination and a heading found in the body both
     # say where they are, where a printed contents page only says what the book
     # calls that place.
-    physical_pages = bool(entries)
-    if entries:
+    physical_pages = bool(entries) and not printed_won
+    if printed_won:
+        print(f"TOC: {len(entries)} entries from the printed contents page(s)")
+    elif entries:
         print(f"TOC: {len(entries)} entries from the embedded PDF outline")
         page_offset = 0 if args.page_offset is None else args.page_offset
     else:
@@ -1200,6 +1223,37 @@ def _outline_max_level(args: argparse.Namespace) -> int:
     """
     level = getattr(args, "outline_max_level", None)
     return 1 if level is None else level
+
+
+def _printed_toc_if_better(
+    args: argparse.Namespace,
+    input_pdf: Path,
+    outline_entries: list[TocEntry],
+    page_count: int,
+) -> list[TocEntry]:
+    """The printed contents page, if it divides the document and the outline did not.
+
+    Reading it costs a word-geometry scan of the front matter and nothing else,
+    but the outline is given up only for something demonstrably better: more
+    entries, and a division of the document by the same test the outline just
+    failed. Otherwise the outline stands -- a poor table of contents still
+    beats none, and its pages at least need no offset.
+
+    The printed entries carry the book's own folios rather than PDF pages, so
+    they are measured on the spans between them, which the page offset does not
+    move.
+    """
+    if importlib.util.find_spec("fitz") is None:
+        return []
+    try:
+        printed = read_page_toc(input_pdf, toc_pages=args.toc_page, ocr_client=None)
+    except ValueError:
+        return []
+    if len(printed) <= len(outline_entries):
+        return []
+    if not outlinelib.divides_document(printed, page_count, count_tail=False):
+        return []
+    return printed
 
 
 def _write_section_pages(sections: list, output_dir: Path) -> Path:

@@ -290,6 +290,25 @@ def _ascii_staged(input_path: Path) -> Path:
     return staged
 
 
+def _restore_name(produced: Path, stem: str) -> Path:
+    """Give a converted file the name of the document it came from.
+
+    The stand-in the converter is handed carries an ASCII name, and the
+    converter names its output after it -- so a document called
+    ``20240315_부서명_T-101_설비명_사건_문서종류_rev1.2.xlsx``
+    came back as ``20240315___T-101______rev1_2.md``, with the
+    department, the equipment and the event replaced by underscores. In this
+    corpus the filename is where a document's metadata lives, so the
+    workaround must not be allowed to cost it.
+    """
+    if produced.stem == stem:
+        return produced
+    restored = produced.with_name(f"{stem}{produced.suffix}")
+    if restored.exists():
+        restored.unlink()
+    return produced.rename(restored)
+
+
 def convert(
     input_path: Path,
     converter: Converter,
@@ -359,7 +378,7 @@ def convert(
         named = [path for path in candidates if path.stem == stem]
         chosen = named or candidates
         if chosen:
-            produced.append(chosen[0])
+            produced.append(_restore_name(chosen[0], input_path.stem))
     if getattr(proc, "returncode", 1) != 0 or not produced:
         detail = (getattr(proc, "stderr", "") or getattr(proc, "stdout", "") or "").strip()
         raise SystemExit(

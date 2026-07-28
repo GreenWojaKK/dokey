@@ -1166,6 +1166,32 @@ class ConverterSeamTests(unittest.TestCase):
             self.assertTrue(seen["path"].isascii(), seen["path"])
             self.assertEqual(produced[0].read_text(encoding="utf-8"), "# ok\n")
 
+    def test_a_converted_file_comes_back_under_the_document_s_own_name(self) -> None:
+        # The converter is handed an ASCII stand-in and names its output after
+        # it. In this corpus the filename carries the date, the equipment tag
+        # and the revision, so the workaround must not be what loses them.
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "20240315_부서명_T-101_사건_rev1.2.pdf"
+            source.write_bytes(b"%PDF-1.4\n")
+
+            def runner(command, **kwargs):
+                given = Path(command[command.index("convert") + 1])
+                out = Path(command[command.index("--output") + 1])
+                out.mkdir(parents=True, exist_ok=True)
+                (out / f"{given.stem}.md").write_text("# ok\n", encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            produced = convertlib.convert(
+                source,
+                convertlib.Converter(("docling",)),
+                work_dir=Path(tmp) / "out",
+                runner=runner,
+            )
+            self.assertEqual(
+                produced[0].name, "20240315_부서명_T-101_사건_rev1.2.md"
+            )
+            self.assertEqual(produced[0].read_text(encoding="utf-8"), "# ok\n")
+
     def test_converter_log_in_another_encoding_does_not_fail_the_run(self) -> None:
         # The child writes its log in the console codepage; decoding it
         # strictly would fail a conversion that already succeeded.

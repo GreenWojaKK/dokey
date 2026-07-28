@@ -1912,6 +1912,125 @@ class OutlineCoverageTests(unittest.TestCase):
         self.assertTrue(divides_document(entries, 10, count_tail=False))
 
 
+class FigureCaptionTests(unittest.TestCase):
+    """A caption names something other than itself: above it, or below it."""
+
+    def _blocks(self, tmp: Path, document: dict) -> Path:
+        path = tmp / "blocks.json"
+        path.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+        return path
+
+    @staticmethod
+    def _bbox(top: float, bottom: float) -> dict:
+        # PDF space: the origin is bottom-left, so a larger t is higher up.
+        return {"l": 100.0, "t": top, "r": 300.0, "b": bottom,
+                "coord_origin": "BOTTOMLEFT"}
+
+    def _document(self) -> dict:
+        """Two figures, one captioned by the converter and one not.
+
+        Both captions sit below their picture, which is what this document
+        does; the second binding has to be induced from the first.
+        """
+        return {
+            "pictures": [
+                {
+                    "self_ref": "#/pictures/0",
+                    "prov": [{"page_no": 1, "bbox": self._bbox(700, 500)}],
+                    "captions": [{"$ref": "#/texts/0"}],
+                },
+                {
+                    "self_ref": "#/pictures/1",
+                    "prov": [{"page_no": 2, "bbox": self._bbox(700, 500)}],
+                },
+            ],
+            "tables": [],
+            "texts": [
+                {
+                    "self_ref": "#/texts/0",
+                    "label": "caption",
+                    "text": "<그림 1> 파이프서포트",
+                    "prov": [{"page_no": 1, "bbox": self._bbox(490, 480)}],
+                },
+                {
+                    "self_ref": "#/texts/1",
+                    "label": "caption",
+                    "text": "<그림 2> 틀형 동바리",
+                    "prov": [{"page_no": 2, "bbox": self._bbox(490, 480)}],
+                },
+            ],
+        }
+
+    def test_an_orphan_caption_is_bound_the_way_the_document_binds_the_rest(self) -> None:
+        from dokey import figures
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rows, report = figures.read_figures(
+                self._blocks(Path(tmp), self._document())
+            )
+        by_ref = {row.ref: row for row in rows}
+        self.assertEqual(by_ref["#/pictures/0"].basis, "converter")
+        self.assertEqual(by_ref["#/pictures/1"].caption, "<그림 2> 틀형 동바리")
+        self.assertEqual(by_ref["#/pictures/1"].basis, "induced")
+        self.assertEqual(by_ref["#/pictures/1"].side, "below")
+        self.assertEqual(report.conventions["picture"], "below")
+        self.assertEqual(report.unbound_captions, 0)
+
+    def test_a_caption_on_the_wrong_side_is_left_alone(self) -> None:
+        from dokey import figures
+
+        document = self._document()
+        # Move the orphan caption above its picture: this document puts them
+        # below, so it is not that picture's caption.
+        document["texts"][1]["prov"][0]["bbox"] = self._bbox(760, 750)
+        with tempfile.TemporaryDirectory() as tmp:
+            rows, report = figures.read_figures(self._blocks(Path(tmp), document))
+        by_ref = {row.ref: row for row in rows}
+        self.assertIsNone(by_ref["#/pictures/1"].caption)
+        self.assertEqual(report.unbound_objects, 1)
+        self.assertEqual(report.unbound_captions, 1)
+
+    def test_a_document_with_no_evidence_falls_back_to_the_corpus_prior(self) -> None:
+        from dokey import figures
+
+        document = self._document()
+        document["pictures"][0].pop("captions")  # nothing bound to learn from
+        with tempfile.TemporaryDirectory() as tmp:
+            rows, report = figures.read_figures(self._blocks(Path(tmp), document))
+        bases = {row.basis for row in rows if row.caption}
+        self.assertEqual(bases, {"prior"})
+        self.assertEqual(report.from_prior, 2)
+        # A table's prior is the other way up, and is not a figure's.
+        self.assertEqual(figures.CORPUS_PRIOR["table"], "above")
+
+    def test_a_spreadsheet_grid_counts_the_other_way_up(self) -> None:
+        from dokey import figures
+
+        # A sheet's rows increase downwards, so "above" is the smaller t.
+        upper = {"t": 1.0, "b": 2.0, "coord_origin": "TOPLEFT"}
+        lower = {"t": 5.0, "b": 6.0, "coord_origin": "TOPLEFT"}
+        side, _ = figures._side_and_gap(upper, lower)
+        self.assertEqual(side, "above")
+
+    def test_the_figure_is_placed_in_the_section_that_holds_it(self) -> None:
+        from dokey import figures
+        from dokey.mdunit import Section
+
+        sections = [
+            Section(order=1, level=1, title="1. 개요", parent="1. 개요", body=""),
+            Section(order=2, level=1, title="2. 부재", parent="2. 부재", body=""),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            rows, _ = figures.read_figures(
+                self._blocks(Path(tmp), self._document()),
+                sections,
+                [(1, 1), (2, 3)],
+            )
+        self.assertEqual(rows[0].section, "1. 개요")
+        self.assertEqual(rows[1].section, "2. 부재")
+        self.assertEqual(rows[1].section_index, 2)
+
+
 class SpreadsheetTests(unittest.TestCase):
     """A workbook's unit is the sheet, and its title is the sheet's name."""
 

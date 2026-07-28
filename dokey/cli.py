@@ -17,6 +17,7 @@ from . import bodytoc
 from . import convert as convertlib
 from . import detect as detectlib
 from . import docname as docnamelib
+from . import figures as figureslib
 from . import folios as folioslib
 from . import hwp as hwplib
 from . import mdunit
@@ -1470,6 +1471,16 @@ def _ingest_markdown(
 
     toc_path = write_toc(output_dir, result.outline)
     print(f"Wrote table of contents: {toc_path} ({len(result.outline)} entries)")
+
+    if source_blocks is not None:
+        # A caption belongs to something other than itself, and the block
+        # stream is where the geometry to settle that lives.
+        figures, figure_report = figureslib.read_figures(
+            source_blocks, sections, pages
+        )
+        if figures:
+            figures_path = figureslib.write_figures(output_dir, figures)
+            print(f"Wrote figures: {figures_path} ({figure_report.summary()})")
 
     if write_items:
         items_path, segment_report = _write_addressed_items(

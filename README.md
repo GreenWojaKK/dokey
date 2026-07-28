@@ -84,6 +84,27 @@ bound the whole range and `char_own_end` bounds the item's own words. A rung
 the document skips is counted, never invented. Turn the file off with
 `--no-items`.
 
+`silver/figures.jsonl` says **which caption names which figure**. A caption is a
+sentence that belongs to something other than itself, and the something is above
+it or below it — which one is a *convention*, not a fact of layout. Measured over
+866 Korean technical standards: a figure's caption sits below it (2,400 pairs
+against 90) and a table's sits above it (1,483 against 184), opposite answers for
+objects that look alike on the page. So neither is assumed. Each document is
+asked what it does, from the pairs the converter already bound, and the corpus
+figures are only a prior for a document that binds none of its own.
+
+Docling binds what it can and leaves the rest — 60% of pictures and 33% of
+tables — and 662 caption-labelled blocks in that corpus were bound to nothing at
+all: text announcing that it names something, naming nothing. Binding the
+leftovers by the document's own convention places 439 of them, taking captioned
+objects from 4,157 to 4,596 and leaving 223 captions unplaced. Each row records
+the binding **and how it was decided** (`converter`, `induced`, `prior`), the
+side, the gap, and the section the object sits in — so a figure can be cited the
+way a clause is. Objects that stay unbound are counted, not guessed at: plenty of
+figures simply have no caption. Note the division of labour — whether a block
+*is* a caption is the converter's call (a lexical judgement); dokey only decides
+what it points at (a geometric one).
+
 `silver/document.json` records what the document's **own filename** states. In
 the corpus this was built for, the filename is not decoration — it is where the
 metadata lives: `20240315_부서명_T-101_설비명_사건_문서종류_rev1.2.xlsx`

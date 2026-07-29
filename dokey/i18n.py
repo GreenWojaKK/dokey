@@ -53,7 +53,21 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "backend_source_config": "saved setting",
         "backend_source_default": "default",
         "pdf": "PDF",
-        "document_file": "PDF · HWP/HWPX · Markdown",
+        "document_file": "PDF · HWP/HWPX · Markdown · Excel (xlsx)",
+        "sheet_input_caption": (
+            "A workbook is unitized by sheet: each sheet becomes one section, "
+            "titled by its own sheet name, tables intact. None of the heading "
+            "questions apply, so there is nothing else to set."
+        ),
+        "sheet_sections_caption": "Its sections will be its {count} sheet(s): {names}",
+        "sheet_names_unreadable": (
+            "The sheet names could not be read from this file; the sheets will "
+            "be numbered."
+        ),
+        "sheet_converter_offline": (
+            "No layout converter found — reading a workbook's tables needs one. "
+            "`pip install docling` and dokey runs it from here, no setup."
+        ),
         "choose_document": "Choose a document",
         "change_document": "Choose another document",
         "clear_document": "Clear",
@@ -307,7 +321,21 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "backend_source_config": "저장된 설정",
         "backend_source_default": "기본값",
         "pdf": "PDF",
-        "document_file": "PDF · HWP/HWPX · 마크다운",
+        "document_file": "PDF · HWP/HWPX · 마크다운 · 엑셀(xlsx)",
+        "sheet_input_caption": (
+            "워크북은 시트 단위로 쪼개집니다 — 시트 하나가 절 하나가 되고, "
+            "제목은 시트명이며 표는 그대로 실립니다. 표제 관련 설정은 "
+            "적용되지 않으므로 더 정할 것이 없습니다."
+        ),
+        "sheet_sections_caption": "절이 될 시트 {count}개: {names}",
+        "sheet_names_unreadable": (
+            "이 파일에서 시트명을 읽지 못했습니다. 시트는 번호로 매겨집니다."
+        ),
+        "sheet_converter_offline": (
+            "레이아웃 변환기를 찾지 못했습니다 — 워크북의 표를 읽으려면 "
+            "필요합니다. `pip install docling`만 하면 별도 설정 없이 dokey가 "
+            "여기서 실행합니다."
+        ),
         "choose_document": "문서 선택",
         "change_document": "다른 문서 선택",
         "clear_document": "해제",

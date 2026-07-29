@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import csv
 import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -716,6 +717,16 @@ class FolderPickerTests(unittest.TestCase):
         self.assertIn("askopenfilename", snippet)
         self.assertIn(f"initialdir={json.dumps(str(project))}", snippet)
 
+    def test_file_dialog_offers_every_format_the_ingest_can_take(self) -> None:
+        from dokey import pickers, sheets
+
+        snippet = pickers.file_dialog_snippet("pick", Path("."), Path("a.txt"))
+        # The dialog's filter is a literal, so a format added to the ingest
+        # can silently stay unchoosable: every suffix the router accepts has
+        # to appear in it.
+        for suffix in sorted(sheets.SPREADSHEET_SUFFIXES):
+            self.assertIn(f"*{suffix}", snippet)
+
     def test_a_chosen_file_comes_back_from_the_project_picker(self) -> None:
         from dokey import pickers
 
@@ -923,6 +934,45 @@ class UiIngestPanelTests(unittest.TestCase):
                     self.assertNotIn("project_path", text_inputs)
                 else:
                     self.assertIn("project_path", text_inputs)
+            finally:
+                os.chdir(previous_cwd)
+                if previous_config is None:
+                    os.environ.pop("DOKEY_CONFIG_DIR", None)
+                else:
+                    os.environ["DOKEY_CONFIG_DIR"] = previous_config
+
+    def test_a_workbook_routes_to_the_sheet_form_not_the_prose_forms(self) -> None:
+        from dokey import pickers
+
+        if not pickers.HAS_FILE_PICKER:
+            self.skipTest("tkinter not installed")
+        try:
+            from openpyxl import Workbook
+        except ImportError:  # pragma: no cover - environment dependent
+            self.skipTest("openpyxl not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            previous_cwd = Path.cwd()
+            previous_config = os.environ.get("DOKEY_CONFIG_DIR")
+            os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
+            os.chdir(tmp_path)
+            try:
+                book = tmp_path / "20240315_부서명_T-101_사건.xlsx"
+                workbook = Workbook()
+                workbook.active.title = "견적서"
+                workbook.save(book)
+
+                app = self._importing(tmp_path)
+                app.session_state["_ingest_local_file"] = str(book)
+                app.run()
+                self.assertFalse(app.exception)
+                buttons = {widget.key for widget in app.button}
+                # The sheet form, and only it: a workbook offered the prose
+                # forms would be one section, or worse, rows dropped as
+                # running headers.
+                self.assertIn("sheet_run", buttons)
+                self.assertNotIn("md_run", buttons)
+                self.assertNotIn("ing_mode", {w.key for w in app.radio})
             finally:
                 os.chdir(previous_cwd)
                 if previous_config is None:
@@ -2665,6 +2715,23 @@ class SpreadsheetTests(unittest.TestCase):
             path = Path(tmp) / "not.xlsx"
             path.write_bytes(b"not a zip")
             self.assertEqual(sheets.sheet_names(path), [])
+
+    def test_sheet_names_read_from_a_byte_stream_as_from_a_path(self) -> None:
+        from dokey import sheets
+
+        try:
+            from openpyxl import Workbook
+        except ImportError:  # pragma: no cover - environment dependent
+            self.skipTest("openpyxl not installed")
+        # The app's web fallback holds an upload's bytes and no path, and the
+        # sheet names are worth showing before anything is staged to disk.
+        buffer = io.BytesIO()
+        workbook = Workbook()
+        workbook.active.title = "견적서"
+        workbook.create_sheet("설비목록")
+        workbook.save(buffer)
+        buffer.seek(0)
+        self.assertEqual(sheets.sheet_names(buffer), ["견적서", "설비목록"])
 
 
 @unittest.skipUnless(_HAS_FITZ, "PyMuPDF (optional [ocr] extra) not installed")

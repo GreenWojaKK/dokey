@@ -591,7 +591,10 @@ full control — pick the TOC source (PDF outline, an uploaded CSV/text TOC, or
 the printed contents page, which falls back to the OCR backend for scanned
 books) and set the offset and overlap yourself. Either way it ingests,
 optionally recovers printed page numbers, builds the index, and opens the new
-lake — no CLI needed. The **🔌 OCR backend** panel shows whether your local
+lake — no CLI needed. The chooser takes every format the CLI does — PDF,
+HWP/HWPX, Markdown, and spreadsheets (`.xlsx` and its relatives) — and routes
+each to its own form: a workbook gets the sheet path, with its sheet names
+shown up front, since those are exactly the sections it will become. The **🔌 OCR backend** panel shows whether your local
 serving is up and lets you pick a discovered server.
 
 A library is a folder on this machine, so it is opened the way a folder is

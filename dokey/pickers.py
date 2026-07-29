@@ -59,7 +59,11 @@ chosen = filedialog.askopenfilename(
     title={title},
     initialdir={initial_dir},
     filetypes=[
-        ("Dokey documents", "*.pdf *.hwp *.hwpx *.md *.markdown"),
+        (
+            "Dokey documents",
+            "*.pdf *.hwp *.hwpx *.md *.markdown "
+            "*.xlsx *.xlsm *.xlsb *.xls *.ods",
+        ),
         ("All files", "*.*"),
     ],
 ) or ""

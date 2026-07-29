@@ -24,6 +24,7 @@ import json
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import BinaryIO
 from xml.etree import ElementTree
 
 from .mdunit import Section
@@ -69,15 +70,19 @@ def is_spreadsheet(path: Path) -> bool:
     return path.suffix.lower() in SPREADSHEET_SUFFIXES
 
 
-def sheet_names(path: Path) -> list[str]:
+def sheet_names(source: Path | BinaryIO) -> list[str]:
     """The workbook's sheet names, in order, or [] if they cannot be read.
 
     Only the OOXML container is understood. A legacy ``.xls`` or an ``.ods``
     keeps its names somewhere else, and rather than guess, the sheets are
     numbered -- which is what a reader sees in that case anyway.
+
+    ``source`` is a path or an open binary stream: the app's web fallback
+    holds an upload's bytes and no path, and the names are worth showing
+    before anything is staged to disk.
     """
     try:
-        with zipfile.ZipFile(path) as archive:
+        with zipfile.ZipFile(source) as archive:
             workbook = archive.read("xl/workbook.xml")
     except (KeyError, OSError, zipfile.BadZipFile):
         return []

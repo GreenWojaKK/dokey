@@ -34,6 +34,7 @@ from dokey import hwp as hwplib
 from dokey import mdunit
 from dokey import blocks as blockslib
 from dokey import search as searchlib
+from dokey import sheets as sheetslib
 from dokey import tocsource
 from dokey import workspace as workspacelib
 from dokey.i18n import (
@@ -496,9 +497,14 @@ def import_view() -> None:
     upload = _document_picker()
     # HWP and Markdown are flow formats with no pages, so the PDF page-offset
     # / overlap / TOC controls do not apply; both take the heading-unitized
-    # path. Markdown needs no converter at all -- it is ingested as-is.
+    # path. Markdown needs no converter at all -- it is ingested as-is. A
+    # workbook is neither: its unit is the sheet, so none of the heading
+    # questions apply to it either.
     if upload is not None and hwplib.is_hwp(Path(upload.name)):
         _hwp_ingest_form(upload)
+        return
+    if upload is not None and sheetslib.is_spreadsheet(Path(upload.name)):
+        _sheet_ingest_form(upload)
         return
     if upload is not None and mdunit.is_markdown(Path(upload.name)):
         _md_ingest_form(upload)
@@ -517,12 +523,18 @@ def import_view() -> None:
         _manual_ingest_form(upload)
 
 
+DOCUMENT_TYPES = [
+    "pdf", "hwp", "hwpx", "md", "markdown",
+    "xlsx", "xlsm", "xlsb", "xls", "ods",
+]
+
+
 def _document_picker():
     """Choose locally from the active project, with upload as the web fallback."""
     if not HAS_FILE_PICKER:
         return st.file_uploader(
             t("document_file"),
-            type=["pdf", "hwp", "hwpx", "md", "markdown"],
+            type=DOCUMENT_TYPES,
             key="ing_pdf",
         )
 
@@ -599,6 +611,76 @@ def run_hwp_ingest_ui(upload, lake_name: str) -> None:
         with st.spinner(t("ingesting", name=upload.name)), \
                 contextlib.redirect_stdout(log):
             dokey_cli.run_hwp_ingest(args)
+    except SystemExit as exc:
+        _report_failure("ingest_failed", exc, log)
+        return
+    except Exception as exc:  # surface any pipeline error in the browser
+        _report_failure(
+            "ingest_error", exc, log, trace=traceback.format_exc()
+        )
+        return
+
+    st.success(t("ingested", path=out_dir))
+    with st.expander(t("ingest_log"), expanded=False):
+        st.code(log.getvalue() or t("no_output"))
+    st.session_state["_new_lake"] = str(out_dir)
+    st.rerun()
+
+
+def _sheet_ingest_form(upload) -> None:
+    """Spreadsheet ingest: one sheet becomes one section, named by the workbook.
+
+    The layout converter reads the tables -- merged cells, the legacy binary
+    formats -- and dokey only decides the unit, which for a workbook is the
+    sheet. The prose unitizer is never involved, so none of the depth or
+    language questions are asked here; the one honest preview, the sheet
+    names, is free to read and is shown instead.
+    """
+    st.caption(t("sheet_input_caption"))
+    converter, source = convertlib.resolve_converter()
+    if converter is None:
+        st.warning(t("sheet_converter_offline"))
+    else:
+        known = {"config", "discovered", "flag"}
+        st.caption(
+            t(
+                "converter_online",
+                cmd=converter.display(),
+                source=t(f"converter_source_{source}") if source in known else source,
+            )
+        )
+    path = getattr(upload, "path", None)
+    names = sheetslib.sheet_names(path if path else io.BytesIO(upload.getvalue()))
+    named = [name for name in names if name.strip()]
+    if named:
+        st.caption(
+            t("sheet_sections_caption", count=len(named), names=", ".join(named))
+        )
+    else:
+        st.caption(t("sheet_names_unreadable"))
+    name_column, _spacer = st.columns([2, 3])
+    lake_name = name_column.text_input(
+        t("library_name_optional"), value="", key="sheet_name"
+    )
+    if _run_button("sheet_run", disabled=converter is None):
+        run_sheet_ingest_ui(upload, lake_name)
+
+
+def run_sheet_ingest_ui(upload, lake_name: str) -> None:
+    """Save the workbook, run the exact CLI sheet-ingest path, open the new lake."""
+    work = Path(tempfile.mkdtemp(prefix="dokey_ui_sheet_"))
+    book_path = work / upload.name
+    book_path.write_bytes(upload.getvalue())
+
+    name = lake_name.strip() or Path(upload.name).stem
+    out_dir = _project_output_dir(name)
+    args = SimpleNamespace(input=book_path, output_dir=out_dir)
+
+    log = io.StringIO()
+    try:
+        with st.spinner(t("ingesting", name=upload.name)), \
+                contextlib.redirect_stdout(log):
+            dokey_cli.run_sheet_ingest(args)
     except SystemExit as exc:
         _report_failure("ingest_failed", exc, log)
         return

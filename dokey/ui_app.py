@@ -335,6 +335,7 @@ def backend_panel() -> None:
 
 
 def ingest_panel() -> None:
+    clear_preview()  # each run re-earns its preview below
     with st.expander(t("ingest_book"), expanded=False):
         upload = st.file_uploader(
             t("document_file"),
@@ -516,14 +517,51 @@ def _preview_pdf(payload: bytes, name: str, depth, profile: str):
     return rows, found.label, level, found.note or "-"
 
 
-def _preview_panel(rows, source: str, depth, ladder: str) -> None:
+def _stash_preview(name: str, rows, source: str, depth, ladder: str) -> None:
+    """Hand the preview to the main pane.
+
+    The forms live in the sidebar, which is the narrowest column on the page,
+    and a table of a document's sections is the widest thing the app has to
+    show. Streamlit runs the sidebar first, so the preview computed there is
+    waiting in session state by the time the main pane renders.
+    """
+    st.session_state["_preview"] = {
+        "name": name,
+        "rows": rows,
+        "source": source,
+        "depth": depth,
+        "ladder": ladder,
+    }
+
+
+def clear_preview() -> None:
+    st.session_state.pop("_preview", None)
+
+
+def preview_pane() -> bool:
+    """Render a pending preview in the main pane. True when one was shown."""
+    preview = st.session_state.get("_preview")
+    if not preview:
+        return False
+    st.subheader(t("preview_toc"))
+    st.caption(preview["name"])
+    rows = preview["rows"]
     if not rows:
         st.info(t("preview_empty"))
-        return
-    st.caption(t("preview_source", source=source, count=len(rows), depth=depth))
-    if ladder and ladder != "-":
-        st.caption(t("preview_ladder", ladder=ladder))
-    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        return True
+    st.caption(
+        t(
+            "preview_source",
+            source=preview["source"],
+            count=len(rows),
+            depth=preview["depth"],
+        )
+    )
+    if preview["ladder"] and preview["ladder"] != "-":
+        st.caption(t("preview_ladder", ladder=preview["ladder"]))
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True, height=560)
+    st.caption(t("preview_not_extracted"))
+    return True
 
 
 def _md_ingest_form(upload) -> None:
@@ -549,14 +587,16 @@ def _md_ingest_form(upload) -> None:
     ):
         try:
             with st.spinner(t("preview_reading")):
-                rows, source, used_depth, ladder = _preview_markdown(
-                    upload.getvalue(),
+                _stash_preview(
                     upload.name,
-                    depth,
-                    profile,
-                    blocks_upload.getvalue() if blocks_upload is not None else None,
+                    *_preview_markdown(
+                        upload.getvalue(),
+                        upload.name,
+                        depth,
+                        profile,
+                        blocks_upload.getvalue() if blocks_upload is not None else None,
+                    ),
                 )
-            _preview_panel(rows, source, used_depth, ladder)
         except Exception as exc:  # a preview must never break the form
             st.warning(t("preview_failed", error=exc))
     if st.button(t("run_ingest"), key="md_run", type="primary"):
@@ -678,10 +718,12 @@ def _auto_ingest_form(pdf_upload) -> None:
     ):
         try:
             with st.spinner(t("preview_reading")):
-                rows, source, used_depth, note = _preview_pdf(
-                    pdf_upload.getvalue(), pdf_upload.name, depth, profile
+                _stash_preview(
+                    pdf_upload.name,
+                    *_preview_pdf(
+                        pdf_upload.getvalue(), pdf_upload.name, depth, profile
+                    ),
                 )
-            _preview_panel(rows, source, used_depth, note)
         except Exception as exc:
             st.warning(t("preview_failed", error=exc))
     if st.button(
@@ -935,5 +977,6 @@ if query.strip():
         st.info(t("no_matches"))
     for hit in results:
         result_card(active_lake, hit)
-else:
+elif not preview_pane():
+    # Nothing being looked at and nothing being searched: the library it is.
     browse_sections(active_lake)

@@ -97,6 +97,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "nothing to split on."
         ),
         "preview_failed": "Could not read this document: {error}",
+        "preview_not_extracted": (
+            "Nothing has been extracted yet — add the document to keep it."
+        ),
         "preview_title": "Section",
         "preview_level": "Depth",
         "preview_pages": "Pages",
@@ -307,6 +310,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "이 문서에서 목차를 찾지 못했습니다. 추출해도 나눌 기준이 없습니다."
         ),
         "preview_failed": "문서를 읽지 못했습니다: {error}",
+        "preview_not_extracted": (
+            "아직 아무것도 추출되지 않았습니다 — 추가를 눌러야 저장됩니다."
+        ),
         "preview_title": "절",
         "preview_level": "깊이",
         "preview_pages": "지면",

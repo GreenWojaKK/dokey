@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import csv
 import importlib.util
 import json
@@ -811,6 +812,64 @@ class UiIngestPanelTests(unittest.TestCase):
                     os.environ.pop("DOKEY_CONFIG_DIR", None)
                 else:
                     os.environ["DOKEY_CONFIG_DIR"] = previous_config
+
+
+class UiPreviewPlacementTests(unittest.TestCase):
+    """A table of contents is the widest thing the app shows.
+
+    The forms that produce it live in the sidebar, which is the narrowest
+    column on the page. So the preview is handed to the main pane -- the same
+    space the library listing occupies by default -- and it must be rendered
+    there and nowhere else. The file uploader cannot be driven from
+    ``AppTest``, so this is checked where the placement actually lives: the
+    call site.
+    """
+
+    def _module(self) -> ast.Module:
+        path = Path(__file__).resolve().parents[1] / "dokey" / "ui_app.py"
+        return ast.parse(path.read_text(encoding="utf-8"))
+
+    @staticmethod
+    def _calls(node: ast.AST) -> list[str]:
+        return [
+            call.func.id
+            for call in ast.walk(node)
+            if isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+        ]
+
+    def test_the_preview_is_rendered_once_from_the_main_pane(self) -> None:
+        tree = self._module()
+        self.assertEqual(self._calls(tree).count("preview_pane"), 1)
+        top_level = [
+            node
+            for node in tree.body
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        ]
+        rendered = [node for node in top_level if "preview_pane" in self._calls(node)]
+        self.assertEqual(len(rendered), 1)
+
+    def test_the_preview_takes_the_pane_the_library_listing_defaults_to(self) -> None:
+        tree = self._module()
+        listing = [
+            node
+            for node in tree.body
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            and "browse_sections" in self._calls(node)
+        ]
+        self.assertEqual(len(listing), 1)
+        self.assertIn("preview_pane", self._calls(listing[0]))
+
+    def test_the_sidebar_does_not_render_the_preview(self) -> None:
+        tree = self._module()
+        sidebars = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.With)
+            and "st.sidebar" in ast.unparse(node.items[0].context_expr)
+        ]
+        self.assertTrue(sidebars)
+        for block in sidebars:
+            self.assertNotIn("preview_pane", self._calls(block))
 
 
 _HAS_FITZ = importlib.util.find_spec("fitz") is not None

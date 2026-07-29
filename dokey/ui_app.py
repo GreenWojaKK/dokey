@@ -203,6 +203,7 @@ def run_ingest_auto_ui(
     recover_folios: bool,
     lake_name: str,
     read_method: str = "auto",
+    section_depth: str = "auto",
 ) -> None:
     """The smart one-shot path, mirroring `dokey auto`: recognize the TOC
     source, estimate the page offset, smoke-test every section start, pick the
@@ -223,6 +224,7 @@ def run_ingest_auto_ui(
         command="auto",
         input=pdf_path,
         output_dir=out_dir,
+        section_depth=section_depth,
         page_offset=page_offset,  # None -> estimate from the document
         toc_page=toc_pages,  # None -> auto-detect the contents page(s)
         outline_max_level=1,
@@ -411,6 +413,25 @@ def run_hwp_ingest_ui(upload, lake_name: str) -> None:
     st.rerun()
 
 
+SECTION_DEPTHS = ("auto", "clause", "subclause")
+
+
+def _section_depth_input(key: str) -> str:
+    """Let the reader say how finely the document should be cut.
+
+    The same question the CLI asks with --section-depth, worth asking here too:
+    a corpus that has to be uniform wants clause or subclause, and a single
+    document being read wants auto.
+    """
+    return st.selectbox(
+        t("section_depth"),
+        SECTION_DEPTHS,
+        format_func=lambda value: t(f"section_depth_{value}"),
+        key=key,
+        help=t("section_depth_help"),
+    )
+
+
 def _md_ingest_form(upload) -> None:
     """Markdown/Markdown-render ingest: unitized by heading, no converter needed.
 
@@ -421,11 +442,12 @@ def _md_ingest_form(upload) -> None:
     lake_name = st.text_input(
         t("library_name_optional"), value="", key="md_name"
     )
+    depth = _section_depth_input("md_depth")
     if st.button(t("run_ingest"), key="md_run", type="primary"):
-        run_md_ingest_ui(upload, lake_name)
+        run_md_ingest_ui(upload, lake_name, depth)
 
 
-def run_md_ingest_ui(upload, lake_name: str) -> None:
+def run_md_ingest_ui(upload, lake_name: str, section_depth: str = "auto") -> None:
     """Save the uploaded Markdown, run the exact CLI ingest path, open the lake."""
     work = Path(tempfile.mkdtemp(prefix="dokey_ui_md_"))
     md_path = work / upload.name
@@ -433,7 +455,9 @@ def run_md_ingest_ui(upload, lake_name: str) -> None:
 
     name = lake_name.strip() or Path(upload.name).stem
     out_dir = Path.cwd() / "dokey_out" / slugify(name)
-    args = SimpleNamespace(input=md_path, output_dir=out_dir)
+    args = SimpleNamespace(
+        input=md_path, output_dir=out_dir, section_depth=section_depth
+    )
 
     log = io.StringIO()
     try:
@@ -507,6 +531,7 @@ def _auto_ingest_form(pdf_upload) -> None:
             t("toc_page_pin"), value="", key="auto_tocpage",
             help=t("toc_page_pin_help"),
         )
+        depth = _section_depth_input("auto_depth")
     recover = st.checkbox(t("recover_printed"), value=True, key="auto_recover")
     lake_name = st.text_input(
         t("library_name_optional"), value="", key="auto_name"
@@ -526,6 +551,7 @@ def _auto_ingest_form(pdf_upload) -> None:
         run_ingest_auto_ui(
             pdf_upload, page_offset, section_overlap, toc_pages, recover, lake_name,
             read_method if has_converter else "never",
+            depth,
         )
 
 

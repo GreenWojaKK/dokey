@@ -52,6 +52,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "Markdown is ingested as-is and unitized by heading (each # section "
             "becomes a unit) — no conversion. Ideal for a Docling/Marker render."
         ),
+        "section_depth": "Split into sections at",
+        "section_depth_auto": "Auto — until sections are of citable size",
+        "section_depth_clause": "Clause (5.)",
+        "section_depth_subclause": "Subclause (5.1)",
+        "section_depth_help": (
+            "Clause and subclause are read from each document's own numbering, "
+            "so they pick the same kind of unit across documents whose ladders "
+            "differ. Auto decides per document, which reads well on its own and "
+            "does not compare between documents."
+        ),
         "hwp_online": "HWP converter: {cmd}",
         "hwp_offline": (
             "No HWP converter found. Install hwp2md, or set one from a terminal: "
@@ -214,6 +224,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "md_input_caption": (
             "마크다운은 변환 없이 그대로 수집되어 heading 단위로 쪼개집니다"
             "(각 # 절이 한 단위). Docling/Marker가 뽑은 마크다운에 적합합니다."
+        ),
+        "section_depth": "절을 나눌 깊이",
+        "section_depth_auto": "자동 — 인용 가능한 크기가 될 때까지",
+        "section_depth_clause": "절 단위 (5.)",
+        "section_depth_subclause": "소절 단위 (5.1)",
+        "section_depth_help": (
+            "절·소절은 각 문서 자신의 번호 체계에서 읽으므로, 사다리가 다른 "
+            "문서들에서도 같은 종류의 단위를 고릅니다. 자동은 문서마다 따로 "
+            "정하므로 한 문서를 읽기에는 좋지만 문서 간 비교에는 맞지 않습니다."
         ),
         "hwp_online": "HWP 변환기: {cmd}",
         "hwp_offline": (

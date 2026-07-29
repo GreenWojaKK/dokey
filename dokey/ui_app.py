@@ -95,11 +95,20 @@ _PROJECT_CSS = f"""
     box-shadow: none;
     color: inherit;
     opacity: .8;  /* enough to set the active row apart, not enough to read as disabled */
-    justify-content: flex-start;
-    text-align: left;
+    align-items: center;
+    gap: .35rem;
     min-width: 0;
     min-height: 0;
     padding: .12rem .3rem;
+}}
+/* A button centres what is inside it, and a full-width button centres it in
+   the middle of the sidebar. Every box in a navigation row starts at the left
+   instead, so the name sits against its folder icon and the names line up with
+   each other. Told to each descendant because the label is nested a few boxes
+   deep and any one of them can be the thing doing the centring. */
+{_nav_rows()}, {_nav_rows(" *")} {{
+    justify-content: flex-start;
+    text-align: left;
 }}
 {_nav_rows(" p")} {{
     color: inherit;

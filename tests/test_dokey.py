@@ -1012,9 +1012,11 @@ class UiSidebarChromeTests(unittest.TestCase):
     """The sidebar is navigation, and should look like navigation.
 
     A clickable row has to be a button underneath, but a column of buttons
-    reads as a stack of boxes. The rows are given keys of their own so the
-    styling can strip the box off them and leave an icon and a name -- and so
-    that it does not also strip the actions standing next to them.
+    reads as a stack of boxes, and a full-width button centres its own label in
+    the middle of the column. The rows are given keys of their own so the
+    styling can strip the box off them, pull icon and name to the left edge
+    where the names line up with each other -- and so that it does not also
+    strip the actions standing next to them.
     """
 
     def _app(self, tmp_path: Path):
@@ -1056,8 +1058,13 @@ class UiSidebarChromeTests(unittest.TestCase):
             for key in rows:
                 prefix = key.rsplit("_", 1)[0]
                 self.assertIn(f'st-key-{prefix}_"] button', css)
+                # The label is nested inside the button, and a button centres
+                # what it contains: the alignment has to reach the nesting.
+                self.assertIn(f'st-key-{prefix}_"] button *', css)
             self.assertIn("background: transparent", css)
             self.assertIn("border: none", css)
+            self.assertIn("justify-content: flex-start", css)
+            self.assertIn("text-align: left", css)
 
         self._in_project(check)
 

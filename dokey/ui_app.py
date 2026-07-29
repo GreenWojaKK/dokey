@@ -502,8 +502,6 @@ def run_md_ingest_ui(
         output_dir=out_dir,
         section_depth=section_depth,
         profile=profile,
-        no_items=not write_items,
-        profile=profile,
         blocks=blocks_path,
         no_items=not write_items,
     )

@@ -19,6 +19,7 @@ from types import SimpleNamespace
 
 import pandas as pd
 import streamlit as st
+from streamlit.errors import StreamlitAPIException
 
 # Streamlit executes this file without package context; make the repo root
 # importable so an uninstalled checkout still works.
@@ -54,33 +55,81 @@ _MARK_CSS = (
     "<style>mark{background:rgba(255,200,0,.45);color:inherit;"
     "padding:0 .12em;border-radius:3px}</style>"
 )
-_PROJECT_CSS = """
+# The project tree is made of buttons because a row has to be clickable, but a
+# tree of buttons reads as a stack of boxes. These prefixes mark the rows that
+# are navigation, so the styling below can strip the box off them and leave an
+# icon and a name -- while the real actions next to them (add a project, forget
+# one) keep looking like the actions they are.
+_NAV_PREFIXES = ("nav_project", "nav_lake")
+
+
+def _nav_rows(suffix: str = "", prefixes: tuple[str, ...] = _NAV_PREFIXES) -> str:
+    """Every navigation row, addressed by the key it was given."""
+    return ", ".join(
+        f'[data-testid="stSidebar"] [class*="st-key-{prefix}_"] button{suffix}'
+        for prefix in prefixes
+    )
+
+
+def _nav_selected(suffix: str = "") -> str:
+    """The active row. Streamlit's ``primary`` kind is the only hook there is.
+
+    It marks which row is current -- nothing here wants the filled button that
+    normally comes with it.
+    """
+    return ", ".join(
+        f'[data-testid="stSidebar"] [class*="st-key-{prefix}_"] '
+        f'[data-testid="stBaseButton-primary"]{suffix}'
+        for prefix in _NAV_PREFIXES
+    )
+
+
+# Selection is weight and opacity, not colour: this Streamlit exposes no theme
+# variable to borrow an accent from, and a hard-coded one would be wrong under
+# any theme but the default.
+_PROJECT_CSS = f"""
 <style>
-[data-testid="stSidebar"] [class*="st-key-project_"] button,
-[data-testid="stSidebar"] [class*="st-key-lake_"] button {
-    min-width: 0;
+{_nav_rows()} {{
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    color: inherit;
+    opacity: .8;  /* enough to set the active row apart, not enough to read as disabled */
+    justify-content: flex-start;
     text-align: left;
-}
-[data-testid="stSidebar"] [class*="st-key-project_"] button p,
-[data-testid="stSidebar"] [class*="st-key-lake_"] button p {
+    min-width: 0;
+    min-height: 0;
+    padding: .12rem .3rem;
+}}
+{_nav_rows(" p")} {{
+    color: inherit;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-[data-testid="stSidebar"] [class*="st-key-project_"]
-    [data-testid="stBaseButton-primary"],
-[data-testid="stSidebar"] [class*="st-key-lake_"]
-    [data-testid="stBaseButton-primary"] {
-    background: rgba(127, 127, 127, .16);
-    border-color: rgba(127, 127, 127, .42);
-    box-shadow: inset 3px 0 0 var(--primary-color);
+}}
+{_nav_rows(":hover")} {{
+    background: rgba(127, 127, 127, .14);
+    opacity: 1;
+}}
+{_nav_rows("", (_NAV_PREFIXES[1],))} {{
+    padding-left: 1.1rem;  /* a library sits under the project that owns it */
+}}
+{_nav_selected()}, {_nav_selected(" p")} {{
     color: inherit;
-}
+    opacity: 1;
+    font-weight: 600;
+}}
 </style>
 """
 
 _LOGO_PATH = Path(__file__).resolve().parent / "assets" / "logo.png"
+# The logo is a 512px square, so a column would scale it to whatever width the
+# sidebar happens to have been dragged to. It is a mark, not an illustration.
+_LOGO_WIDTH = 34
+# Streamlit opens the sidebar at 300px and remembers whatever it is dragged to.
+# Navigation needs less than that; the drag handle still decides the rest.
+_SIDEBAR_WIDTH = 240
 
 
 def ui_language() -> str:
@@ -1125,7 +1174,7 @@ def pick_lake(cli_lake: Path | None) -> Path | None:
         )
         if st.button(
             project.name or str(project),
-            key=_widget_key("project", project),
+            key=_widget_key(_NAV_PREFIXES[0], project),
             help=str(project),
             type="primary" if selected else "secondary",
             icon=":material/folder_open:" if selected else ":material/folder:",
@@ -1140,65 +1189,62 @@ def pick_lake(cli_lake: Path | None) -> Path | None:
 
     st.session_state["_active_project"] = str(active_project)
     lakes = searchlib.find_lakes(active_project)
-    with st.container(border=True):
-        st.caption(t("active_project_path", path=active_project))
-        if not lakes:
-            st.info(t("project_empty"))
-        else:
+    # No box around the tree: indentation and the active row's own weight say
+    # what belongs to what, and a border here would only fence off navigation
+    # from the rest of a column that is nothing but navigation.
+    if not lakes:
+        st.info(t("project_empty"))
+    else:
+        active_lake = _matching_path(st.session_state.get("_active_lake"), lakes)
+        if active_lake is None and new_lake is not None:
+            active_lake = _matching_path(new_lake, lakes)
+        if active_lake is None and cli_lake is not None:
+            active_lake = _matching_path(cli_lake, lakes)
+        if active_lake is None:
             active_lake = _matching_path(
-                st.session_state.get("_active_lake"), lakes
+                workspacelib.remembered_lake(active_project), lakes
             )
-            if active_lake is None and new_lake is not None:
-                active_lake = _matching_path(new_lake, lakes)
-            if active_lake is None and cli_lake is not None:
-                active_lake = _matching_path(cli_lake, lakes)
-            if active_lake is None:
-                active_lake = _matching_path(
-                    workspacelib.remembered_lake(active_project), lakes
-                )
-            if active_lake is None:
-                active_lake = lakes[0]
+        if active_lake is None:
+            active_lake = lakes[0]
 
-            grouped: dict[Path, list[Path]] = {}
-            for lake in lakes:
-                relative = lake.relative_to(active_project)
-                grouped.setdefault(relative.parent, []).append(lake)
-            for folder, folder_lakes in grouped.items():
-                folder_label = (
-                    t("project_root")
-                    if folder == Path(".")
-                    else folder.as_posix()
-                )
-                st.caption(folder_label)
-                for lake in folder_lakes:
-                    selected = _path_key(lake) == _path_key(active_lake)
-                    if st.button(
-                        lake.name,
-                        key=_widget_key("lake", lake),
-                        help=str(lake),
-                        type="primary" if selected else "secondary",
-                        icon=":material/database:",
-                        use_container_width=True,
-                    ):
-                        _activate_lake(active_project, lake)
-                        st.rerun()
-            st.session_state["_active_lake"] = str(active_lake)
-
-        if (
-            _matching_path(active_project, workspacelib.saved_projects()) is not None
-            and _path_key(active_project) != _path_key(cwd)
-            and st.button(
-                t("forget_project"),
-                key=_widget_key("forget_project", active_project),
-                help=t("forget_project_help"),
-                icon=":material/remove_circle_outline:",
-                use_container_width=True,
+        grouped: dict[Path, list[Path]] = {}
+        for lake in lakes:
+            relative = lake.relative_to(active_project)
+            grouped.setdefault(relative.parent, []).append(lake)
+        for folder, folder_lakes in grouped.items():
+            folder_label = (
+                t("project_root") if folder == Path(".") else folder.as_posix()
             )
-        ):
-            workspacelib.forget_project(active_project)
-            st.session_state.pop("_active_project", None)
-            st.session_state.pop("_active_lake", None)
-            st.rerun()
+            st.caption(folder_label)
+            for lake in folder_lakes:
+                selected = _path_key(lake) == _path_key(active_lake)
+                if st.button(
+                    lake.name,
+                    key=_widget_key(_NAV_PREFIXES[1], lake),
+                    help=str(lake),
+                    type="primary" if selected else "secondary",
+                    icon=":material/database:",
+                    use_container_width=True,
+                ):
+                    _activate_lake(active_project, lake)
+                    st.rerun()
+        st.session_state["_active_lake"] = str(active_lake)
+
+    if (
+        _matching_path(active_project, workspacelib.saved_projects()) is not None
+        and _path_key(active_project) != _path_key(cwd)
+        and st.button(
+            t("forget_project"),
+            key=_widget_key("forget_project", active_project),
+            help=t("forget_project_help"),
+            icon=":material/remove_circle_outline:",
+            use_container_width=True,
+        )
+    ):
+        workspacelib.forget_project(active_project)
+        st.session_state.pop("_active_project", None)
+        st.session_state.pop("_active_lake", None)
+        st.rerun()
 
     if not lakes:
         return None
@@ -1209,8 +1255,12 @@ def pick_lake(cli_lake: Path | None) -> Path | None:
 
 def sidebar() -> tuple[Path | None, int]:
     if _LOGO_PATH.exists():
-        logo_col, title_col = st.columns([1, 4])
-        logo_col.image(str(_LOGO_PATH))
+        logo_col, title_col = st.columns(
+            [1, 4], vertical_alignment="center"
+        )
+        # A pixel width, not a share of the column: the sidebar is draggable
+        # and a mark that grows and shrinks with it reads as a mistake.
+        logo_col.image(str(_LOGO_PATH), width=_LOGO_WIDTH)
         title_col.title("Dokey")
     else:
         st.title("Dokey")
@@ -1345,11 +1395,27 @@ def browse_sections(lake: Path) -> None:
     )
 
 
-st.set_page_config(
-    page_title="Dokey",
-    page_icon=str(_LOGO_PATH) if _LOGO_PATH.exists() else "📚",
-    layout="wide",
-)
+def configure_page() -> None:
+    """Open with a sidebar narrower than Streamlit's 300 px default.
+
+    A pixel width is passed where ``initial_sidebar_state`` takes one; it sets
+    only the starting width, so the drag handle and whatever the reader last
+    dragged it to still win. Releases that take the state words alone raise on
+    the number, and get the plain call instead -- the layout is worth having
+    either way.
+    """
+    page = {
+        "page_title": "Dokey",
+        "page_icon": str(_LOGO_PATH) if _LOGO_PATH.exists() else "📚",
+        "layout": "wide",
+    }
+    try:
+        st.set_page_config(**page, initial_sidebar_state=_SIDEBAR_WIDTH)
+    except StreamlitAPIException:
+        st.set_page_config(**page)
+
+
+configure_page()
 st.markdown(_MARK_CSS + _PROJECT_CSS, unsafe_allow_html=True)
 
 with st.sidebar:

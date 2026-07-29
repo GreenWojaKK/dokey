@@ -204,7 +204,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "not_project_folder": "Project folder does not exist: {path}",
         "no_project": "No project folder is available.",
-        "active_project_path": "Project · {path}",
         "project_empty": "No dokey libraries in this project yet.",
         "project_empty_main": (
             "This project is ready. Add a document below to create its first "
@@ -456,7 +455,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "not_project_folder": "프로젝트 폴더가 존재하지 않습니다: {path}",
         "no_project": "사용할 수 있는 프로젝트 폴더가 없습니다.",
-        "active_project_path": "프로젝트 · {path}",
         "project_empty": "이 프로젝트에는 아직 dokey 라이브러리가 없습니다.",
         "project_empty_main": (
             "프로젝트가 준비되었습니다. 아래에서 문서를 추가해 첫 "

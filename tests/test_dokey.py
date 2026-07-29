@@ -1008,6 +1008,143 @@ class UiIngestPanelTests(unittest.TestCase):
 @unittest.skipUnless(
     importlib.util.find_spec("streamlit") is not None, "streamlit not installed"
 )
+class UiSidebarChromeTests(unittest.TestCase):
+    """The sidebar is navigation, and should look like navigation.
+
+    A clickable row has to be a button underneath, but a column of buttons
+    reads as a stack of boxes. The rows are given keys of their own so the
+    styling can strip the box off them and leave an icon and a name -- and so
+    that it does not also strip the actions standing next to them.
+    """
+
+    def _app(self, tmp_path: Path):
+        from streamlit.testing.v1 import AppTest
+
+        app_path = Path(__file__).resolve().parents[1] / "dokey" / "ui_app.py"
+        write_search_lake(tmp_path / "dokey_out" / "manual")
+        return AppTest.from_file(str(app_path), default_timeout=30)
+
+    def _module(self) -> ast.Module:
+        path = Path(__file__).resolve().parents[1] / "dokey" / "ui_app.py"
+        return ast.parse(path.read_text(encoding="utf-8"))
+
+    def _in_project(self, body) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            previous_cwd = Path.cwd()
+            previous_config = os.environ.get("DOKEY_CONFIG_DIR")
+            os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
+            os.chdir(tmp_path)
+            try:
+                body(tmp_path)
+            finally:
+                os.chdir(previous_cwd)
+                if previous_config is None:
+                    os.environ.pop("DOKEY_CONFIG_DIR", None)
+                else:
+                    os.environ["DOKEY_CONFIG_DIR"] = previous_config
+
+    def test_the_navigation_rows_are_the_ones_the_styling_reaches(self) -> None:
+        def check(tmp_path: Path) -> None:
+            app = self._app(tmp_path).run()
+            self.assertFalse(app.exception)
+            keys = [widget.key for widget in app.sidebar.button]
+            rows = [key for key in keys if key.startswith("nav_")]
+            # The current folder is always a project, and it owns one library.
+            self.assertTrue(rows, keys)
+            css = "\n".join(element.value for element in app.markdown)
+            for key in rows:
+                prefix = key.rsplit("_", 1)[0]
+                self.assertIn(f'st-key-{prefix}_"] button', css)
+            self.assertIn("background: transparent", css)
+            self.assertIn("border: none", css)
+
+        self._in_project(check)
+
+    def test_the_actions_beside_the_tree_are_left_looking_like_actions(self) -> None:
+        """A prefix that catches too much is how this went wrong before.
+
+        The rows used to be keyed ``project_<hash>``, which the selector for
+        them also matched on ``project_add`` -- the button that registers one.
+        """
+        def check(tmp_path: Path) -> None:
+            app = self._app(tmp_path).run()
+            keys = [widget.key for widget in app.sidebar.button]
+            prefixes = {
+                key.rsplit("_", 1)[0] for key in keys if key.startswith("nav_")
+            }
+            self.assertTrue(prefixes)
+            actions = [key for key in keys if not key.startswith("nav_")]
+            self.assertIn("project_add", actions)
+            for action in actions:
+                for prefix in prefixes:
+                    self.assertFalse(
+                        action.startswith(f"{prefix}_"), f"{action} ~ {prefix}"
+                    )
+
+        self._in_project(check)
+
+    def test_the_logo_is_given_a_pixel_width_not_a_share_of_the_column(self) -> None:
+        """The sidebar is draggable; a mark that resizes with it reads as a bug."""
+        tree = self._module()
+        widths = [
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "_LOGO_WIDTH"
+                for target in node.targets
+            )
+        ]
+        self.assertEqual(len(widths), 1)
+        self.assertIsInstance(widths[0], ast.Constant)
+        self.assertIsInstance(widths[0].value, int)
+
+        drawn = [
+            call
+            for call in ast.walk(tree)
+            if isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Attribute)
+            and call.func.attr == "image"
+        ]
+        self.assertTrue(drawn)
+        for call in drawn:
+            self.assertIn("width", [keyword.arg for keyword in call.keywords])
+
+    def test_the_sidebar_opens_narrower_than_streamlit_would_open_it(self) -> None:
+        """A pixel width is only the starting point; dragging still decides.
+
+        Older releases take the state words alone and raise on a number, so the
+        call has to survive being refused.
+        """
+        tree = self._module()
+        chosen = [
+            node.value.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Assign)
+            and isinstance(node.value, ast.Constant)
+            and any(
+                isinstance(target, ast.Name) and target.id == "_SIDEBAR_WIDTH"
+                for target in node.targets
+            )
+        ]
+        self.assertEqual(len(chosen), 1)
+        self.assertLess(chosen[0], 300)  # Streamlit's own default
+
+        configure = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "configure_page"
+        ]
+        self.assertEqual(len(configure), 1)
+        source = ast.unparse(configure[0])
+        self.assertIn("initial_sidebar_state=_SIDEBAR_WIDTH", source)
+        self.assertIn("except StreamlitAPIException", source)
+
+
+@unittest.skipUnless(
+    importlib.util.find_spec("streamlit") is not None, "streamlit not installed"
+)
 class UiRerunCostTests(unittest.TestCase):
     """Every widget on the page reruns the whole script.
 

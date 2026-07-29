@@ -637,18 +637,28 @@ def _sheet_ingest_form(upload) -> None:
     names, is free to read and is shown instead.
     """
     st.caption(t("sheet_input_caption"))
-    converter, source = convertlib.resolve_converter()
-    if converter is None:
-        st.warning(t("sheet_converter_offline"))
-    else:
-        known = {"config", "discovered", "flag"}
-        st.caption(
-            t(
-                "converter_online",
-                cmd=converter.display(),
-                source=t(f"converter_source_{source}") if source in known else source,
+    # A legacy .xls is read directly (the converter cannot open it), so the
+    # two shapes need different things in reach before the button is live.
+    if sheetslib.needs_converter(Path(upload.name)):
+        converter, source = convertlib.resolve_converter()
+        blocked = converter is None
+        if blocked:
+            st.warning(t("sheet_converter_offline"))
+        else:
+            known = {"config", "discovered", "flag"}
+            st.caption(
+                t(
+                    "converter_online",
+                    cmd=converter.display(),
+                    source=t(f"converter_source_{source}") if source in known else source,
+                )
             )
-        )
+    else:
+        blocked = not sheetslib.can_read_legacy()
+        if blocked:
+            st.warning(t("sheet_xlrd_offline"))
+        else:
+            st.caption(t("sheet_legacy_caption"))
     path = getattr(upload, "path", None)
     names = sheetslib.sheet_names(path if path else io.BytesIO(upload.getvalue()))
     named = [name for name in names if name.strip()]
@@ -662,7 +672,7 @@ def _sheet_ingest_form(upload) -> None:
     lake_name = name_column.text_input(
         t("library_name_optional"), value="", key="sheet_name"
     )
-    if _run_button("sheet_run", disabled=converter is None):
+    if _run_button("sheet_run", disabled=blocked):
         run_sheet_ingest_ui(upload, lake_name)
 
 

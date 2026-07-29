@@ -980,6 +980,33 @@ class UiIngestPanelTests(unittest.TestCase):
                 else:
                     os.environ["DOKEY_CONFIG_DIR"] = previous_config
 
+    def test_a_legacy_workbook_gets_the_sheet_form_without_a_converter(self) -> None:
+        from dokey import pickers
+
+        if not pickers.HAS_FILE_PICKER:
+            self.skipTest("tkinter not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            previous_cwd = Path.cwd()
+            previous_config = os.environ.get("DOKEY_CONFIG_DIR")
+            os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
+            os.chdir(tmp_path)
+            try:
+                book = tmp_path / "샘플 워크북.xls"
+                book.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 8)
+
+                app = self._importing(tmp_path)
+                app.session_state["_ingest_local_file"] = str(book)
+                app.run()
+                self.assertFalse(app.exception)
+                self.assertIn("sheet_run", {widget.key for widget in app.button})
+            finally:
+                os.chdir(previous_cwd)
+                if previous_config is None:
+                    os.environ.pop("DOKEY_CONFIG_DIR", None)
+                else:
+                    os.environ["DOKEY_CONFIG_DIR"] = previous_config
+
     def test_the_book_chooser_starts_at_the_active_project(self) -> None:
         from dokey import pickers
 
@@ -2715,6 +2742,43 @@ class SpreadsheetTests(unittest.TestCase):
             path = Path(tmp) / "not.xlsx"
             path.write_bytes(b"not a zip")
             self.assertEqual(sheets.sheet_names(path), [])
+
+    def test_a_legacy_workbook_skips_the_converter(self) -> None:
+        from dokey import sheets
+
+        # The converter lists .xls among its inputs but cannot open one; the
+        # measured file died inside its Excel backend. So the legacy format
+        # never goes there at all.
+        self.assertFalse(sheets.needs_converter(Path("워크북.xls")))
+        self.assertTrue(sheets.needs_converter(Path("견적서.xlsx")))
+
+    def test_a_corrupt_ole2_container_reads_as_no_names(self) -> None:
+        from dokey import sheets
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "broken.xls"
+            path.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"junk")
+            # OLE2 magic routes it to the legacy reader, whose failure looks
+            # exactly like the zip path's: numbered sheets, said so.
+            self.assertEqual(sheets.sheet_names(path), [])
+            self.assertEqual(sheets.sheet_names(io.BytesIO(path.read_bytes())), [])
+
+    def test_a_whole_number_keeps_no_decimal_point_it_never_had(self) -> None:
+        from dokey import sheets
+
+        # The binary format stores every number as a float, and a price
+        # rendered as 1250000.0 reads as an error.
+        self.assertEqual(sheets._trim_float(1250000.0), "1250000")
+        self.assertEqual(sheets._trim_float(3.5), "3.5")
+
+    def test_reading_legacy_without_xlrd_says_what_to_install(self) -> None:
+        from dokey import sheets
+
+        with unittest.mock.patch.dict(sys.modules, {"xlrd": None}):
+            with self.assertRaises(SystemExit) as caught:
+                sheets.read_xls(Path("견적서.xls"))
+        self.assertIn("xlrd", str(caught.exception))
+        self.assertIn(".xlsx", str(caught.exception))
 
     def test_sheet_names_read_from_a_byte_stream_as_from_a_path(self) -> None:
         from dokey import sheets

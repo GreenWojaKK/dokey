@@ -1634,6 +1634,21 @@ def run_sheet_ingest(args: argparse.Namespace) -> None:
         raise SystemExit(f"Spreadsheet not found: {input_path}")
     output_dir = getattr(args, "output_dir", None) or _default_lake_dir(input_path)
 
+    # A legacy binary workbook never sees the converter: the converter cannot
+    # open it, and a grid needs no layout reconstruction anyway.
+    if not sheetslib.needs_converter(input_path):
+        sections, report = sheetslib.read_xls(input_path)
+        print(f"{input_path.name}: legacy workbook, read directly (no converter)")
+        print(f"Sheets: {report.summary()}")
+        _write_sections_lake(
+            sections,
+            input_path=input_path,
+            output_dir=output_dir,
+            source_label="spreadsheet",
+            extra_report={"sheets": report.as_dict()},
+        )
+        return
+
     blocks = getattr(args, "blocks", None) or blockslib.find_source_blocks(input_path)
     if blocks is None:
         converter, source = convertlib.resolve_converter()

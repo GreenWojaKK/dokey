@@ -480,7 +480,17 @@ The sheet's *name* is the one thing the conversion drops, and it is the only
 title a sheet has. dokey reads it back out of the workbook itself — an `.xlsx`
 is a zip whose `xl/workbook.xml` lists the sheets in order, and the standard
 library opens both, so this costs no dependency. A format that keeps its names
-elsewhere (legacy `.xls`, `.ods`) gets numbered sheets and says so.
+elsewhere (`.ods`) gets numbered sheets and says so.
+
+A **legacy `.xls`** never sees the converter at all: the converter lists the
+format among its inputs but cannot actually open one — its Excel backend reads
+only the zip container — and a grid needs no layout reconstruction anyway. The
+binary workbook is recognized by its OLE2 magic and read directly with `xlrd`
+(cells, sheet names, and the date epoch), producing sections shaped exactly as
+the converter path shapes them. Whole numbers keep no decimal point they never
+had — the binary format stores every number as a float, and a price rendered
+as `1250000.0` reads as an error. Without `xlrd` installed, the failure says
+what to install rather than what the converter died of.
 
 ## Korean HWP / HWPX
 

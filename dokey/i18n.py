@@ -68,6 +68,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "No layout converter found — reading a workbook's tables needs one. "
             "`pip install docling` and dokey runs it from here, no setup."
         ),
+        "sheet_legacy_caption": (
+            "A legacy .xls workbook: read directly, no converter involved."
+        ),
+        "sheet_xlrd_offline": (
+            "Reading a legacy .xls needs xlrd (`pip install xlrd`) — or save "
+            "the workbook as .xlsx and add that instead."
+        ),
         "choose_document": "Choose a document",
         "change_document": "Choose another document",
         "clear_document": "Clear",
@@ -335,6 +342,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "레이아웃 변환기를 찾지 못했습니다 — 워크북의 표를 읽으려면 "
             "필요합니다. `pip install docling`만 하면 별도 설정 없이 dokey가 "
             "여기서 실행합니다."
+        ),
+        "sheet_legacy_caption": (
+            "구형 .xls 워크북: 변환기 없이 직접 읽습니다."
+        ),
+        "sheet_xlrd_offline": (
+            "구형 .xls를 읽으려면 xlrd가 필요합니다(`pip install xlrd`) — "
+            "또는 .xlsx로 저장해 추가하십시오."
         ),
         "choose_document": "문서 선택",
         "change_document": "다른 문서 선택",

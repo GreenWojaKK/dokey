@@ -20,6 +20,7 @@ library opens both, so this costs no dependency.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import zipfile
 from dataclasses import dataclass, field
@@ -30,8 +31,16 @@ from xml.etree import ElementTree
 from .mdunit import Section
 
 SPREADSHEET_SUFFIXES = frozenset({".xlsx", ".xlsm", ".xlsb", ".xls", ".ods"})
+# The legacy binary format. The layout converter lists it among its inputs but
+# cannot actually open it -- its Excel backend reads only the zip container --
+# while xlrd reads the binary one directly, sheet names included. And a grid
+# needs no layout reconstruction, so the converter detour would buy nothing
+# even if it worked.
+LEGACY_SUFFIXES = frozenset({".xls"})
 # The namespace every OOXML workbook declares for its own elements.
 _MAIN_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+# The OLE2 container magic every legacy Office file opens with.
+_OLE2_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 
 
 @dataclass
@@ -70,17 +79,58 @@ def is_spreadsheet(path: Path) -> bool:
     return path.suffix.lower() in SPREADSHEET_SUFFIXES
 
 
+def needs_converter(path: Path) -> bool:
+    """Whether reading this workbook involves the layout converter at all."""
+    return path.suffix.lower() not in LEGACY_SUFFIXES
+
+
+def can_read_legacy() -> bool:
+    return importlib.util.find_spec("xlrd") is not None
+
+
+def _is_ole2(source: Path | BinaryIO) -> bool:
+    if isinstance(source, (str, Path)):
+        try:
+            with open(source, "rb") as handle:
+                return handle.read(8) == _OLE2_MAGIC
+        except OSError:
+            return False
+    head = source.read(8)
+    source.seek(0)
+    return head == _OLE2_MAGIC
+
+
+def _legacy_names(source: Path | BinaryIO) -> list[str]:
+    try:
+        import xlrd
+    except ImportError:
+        return []
+    try:
+        if isinstance(source, (str, Path)):
+            book = xlrd.open_workbook(str(source), on_demand=True)
+        else:
+            book = xlrd.open_workbook(file_contents=source.read())
+        return [str(name).strip() for name in book.sheet_names()]
+    except Exception:
+        # A corrupt container reads as no names, exactly like the zip path:
+        # the caller numbers the sheets and says so.
+        return []
+
+
 def sheet_names(source: Path | BinaryIO) -> list[str]:
     """The workbook's sheet names, in order, or [] if they cannot be read.
 
-    Only the OOXML container is understood. A legacy ``.xls`` or an ``.ods``
-    keeps its names somewhere else, and rather than guess, the sheets are
-    numbered -- which is what a reader sees in that case anyway.
+    The OOXML container carries them in its own manifest; a legacy binary
+    workbook is recognized by its OLE2 magic and read through xlrd. A format
+    that keeps its names anywhere else (``.ods``) gets numbered sheets --
+    which is what a reader sees in that case anyway.
 
     ``source`` is a path or an open binary stream: the app's web fallback
     holds an upload's bytes and no path, and the names are worth showing
     before anything is staged to disk.
     """
+    if _is_ole2(source):
+        return _legacy_names(source)
     try:
         with zipfile.ZipFile(source) as archive:
             workbook = archive.read("xl/workbook.xml")
@@ -149,6 +199,87 @@ def _sheet_bodies(document: dict, report: SheetReport) -> dict[int, list[str]]:
             continue
         bodies.setdefault(int(page), []).append(content)
     return bodies
+
+
+def _trim_float(value: float) -> str:
+    """A whole number without its trailing ``.0``; anything else as written.
+
+    A cell holding 1200000 comes out of the binary format as 1200000.0, and a
+    price rendered with a decimal point it never had reads as an error.
+    """
+    return str(int(value)) if value == int(value) else str(value)
+
+
+def read_xls(path: Path) -> tuple[list[Section], SheetReport]:
+    """One section per sheet, read straight from the legacy binary workbook.
+
+    No converter is involved: the layout converter cannot open a ``.xls`` at
+    all, and a grid needs no layout reconstruction, so there is nothing for it
+    to add. xlrd reads the cells, the sheet names, and the date epoch; the
+    sections come out shaped exactly as the converter path shapes them.
+    """
+    try:
+        import xlrd
+    except ImportError as exc:
+        raise SystemExit(
+            "Reading a legacy .xls workbook needs xlrd:\n"
+            "  python -m pip install xlrd\n"
+            "or save it as .xlsx and add that instead."
+        ) from exc
+
+    def display(kind: int, value, datemode: int) -> str:
+        if kind == xlrd.XL_CELL_NUMBER:
+            return _trim_float(value)
+        if kind == xlrd.XL_CELL_DATE:
+            moment = xlrd.xldate.xldate_as_datetime(value, datemode)
+            if (moment.hour, moment.minute, moment.second) == (0, 0, 0):
+                return moment.date().isoformat()
+            return moment.isoformat(sep=" ")
+        if kind == xlrd.XL_CELL_BOOLEAN:
+            return "TRUE" if value else "FALSE"
+        if kind == xlrd.XL_CELL_ERROR:
+            return ""
+        return str(value)
+
+    book = xlrd.open_workbook(str(path))
+    report = SheetReport()
+    sections: list[Section] = []
+    for index, sheet in enumerate(book.sheets(), start=1):
+        grid = []
+        for row_index in range(sheet.nrows):
+            row = [
+                {
+                    "text": display(
+                        sheet.cell_type(row_index, col),
+                        sheet.cell_value(row_index, col),
+                        book.datemode,
+                    )
+                }
+                for col in range(sheet.ncols)
+            ]
+            # A form sheet uses blank rows as spacing; an empty table row
+            # carries nothing a search could hit.
+            if any(cell["text"].strip() for cell in row):
+                grid.append(row)
+        rendered = markdown_table(grid)
+        name = (sheet.name or "").strip()
+        if name:
+            report.named += 1
+        title = name or f"Sheet {index}"
+        if rendered:
+            report.tables += 1
+            report.rows += len(grid)
+        else:
+            report.empty_sheets += 1
+        sections.append(
+            Section(order=index, level=1, title=title, parent=title, body=rendered)
+        )
+    report.sheets = len(sections)
+    report.notes.append(
+        "legacy binary workbook, read directly with xlrd; the layout converter "
+        "cannot open this format"
+    )
+    return sections, report
 
 
 def unitize(blocks_path: Path, names: list[str]) -> tuple[list[Section], SheetReport]:

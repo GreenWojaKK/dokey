@@ -32,8 +32,8 @@ from pathlib import Path
 # measured names separate on spaces and the other half on underscores, and the
 # same name often does both.
 _SPLIT = re.compile(r"[_\s]+")
-# Eight digits that could be a date, wherever they sit -- "요약20240315"
-# glues the date to the word before it, with no separator at all.
+# Eight digits that could be a date, wherever they sit: a name often glues the
+# date to the word before it, with no separator at all.
 _DATE8 = re.compile(r"(?<!\d)(\d{4})(\d{2})(\d{2})(?!\d)")
 # The same date written with separators.
 _DATE_SEP = re.compile(r"(?<!\d)(\d{4})[.\-](\d{1,2})[.\-](\d{1,2})(?!\d)")

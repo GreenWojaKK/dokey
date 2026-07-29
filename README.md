@@ -130,9 +130,9 @@ metadata lives: `20240315_부서명_T-101_설비명_사건_문서종류_rev1.2.x
 gives a date, an owning department, an equipment tag, the equipment's name and
 material, what happened to it, a document-type code and a revision, none of
 which need appear inside the file. Three of those are claimed, and each on
-**form** alone: eight digits that make a real calendar date (found even glued to
-a word, as in `요약20240315`), letters-dash-digits in the shape a plant uses for
-tag numbers, and a revision marker. Everything else is kept whole and in order
+**form** alone: eight digits that make a real calendar date (found even where a
+name glues the date to the word before it, with no separator), letters-dash-digits
+in the shape a plant uses for tag numbers, and a revision marker. Everything else is kept whole and in order
 as `tokens` and left uninterpreted — `부서명` is a department to a reader who
 knows the organization, and dokey does not. A consumer with that vocabulary can
 map the tokens; one without still has the name as it was written.

@@ -204,6 +204,8 @@ def run_ingest_auto_ui(
     lake_name: str,
     read_method: str = "auto",
     section_depth: str = "auto",
+    profile: str = "auto",
+    write_items: bool = True,
 ) -> None:
     """The smart one-shot path, mirroring `dokey auto`: recognize the TOC
     source, estimate the page offset, smoke-test every section start, pick the
@@ -225,14 +227,14 @@ def run_ingest_auto_ui(
         input=pdf_path,
         output_dir=out_dir,
         section_depth=section_depth,
+        profile=profile,
+        no_items=not write_items,
         page_offset=page_offset,  # None -> estimate from the document
         toc_page=toc_pages,  # None -> auto-detect the contents page(s)
-        outline_max_level=1,
         section_overlap=section_overlap,  # None -> detect clean vs mid-page
         ocr_endpoint=None,  # resolved: saved backend, else the built-in default
         convert=read_method,  # auto: only when the pages are images
-        profile="auto",
-        no_items=False,
+        blocks=None,  # the PDF is the source; there is no separate stream
     )
     log = io.StringIO()
     try:
@@ -432,6 +434,25 @@ def _section_depth_input(key: str) -> str:
     )
 
 
+LANGUAGE_PROFILES = ("auto", "none", "ko")
+
+
+def _language_profile_input(key: str) -> str:
+    return st.selectbox(
+        t("language_profile"),
+        LANGUAGE_PROFILES,
+        format_func=lambda value: t(f"language_profile_{value}"),
+        key=key,
+        help=t("language_profile_help"),
+    )
+
+
+def _write_items_input(key: str) -> bool:
+    return st.checkbox(
+        t("write_items"), value=True, key=key, help=t("write_items_help")
+    )
+
+
 def _md_ingest_form(upload) -> None:
     """Markdown/Markdown-render ingest: unitized by heading, no converter needed.
 
@@ -443,20 +464,48 @@ def _md_ingest_form(upload) -> None:
         t("library_name_optional"), value="", key="md_name"
     )
     depth = _section_depth_input("md_depth")
+    with st.expander(t("advanced_overrides"), expanded=False):
+        profile = _language_profile_input("md_profile")
+        blocks_upload = st.file_uploader(
+            t("source_blocks"), type=["json"], key="md_blocks",
+            help=t("source_blocks_help"),
+        )
+        write_items = _write_items_input("md_items")
     if st.button(t("run_ingest"), key="md_run", type="primary"):
-        run_md_ingest_ui(upload, lake_name, depth)
+        run_md_ingest_ui(upload, lake_name, depth, profile, blocks_upload, write_items)
 
 
-def run_md_ingest_ui(upload, lake_name: str, section_depth: str = "auto") -> None:
+def run_md_ingest_ui(
+    upload,
+    lake_name: str,
+    section_depth: str = "auto",
+    profile: str = "auto",
+    blocks_upload=None,
+    write_items: bool = True,
+) -> None:
     """Save the uploaded Markdown, run the exact CLI ingest path, open the lake."""
     work = Path(tempfile.mkdtemp(prefix="dokey_ui_md_"))
     md_path = work / upload.name
     md_path.write_bytes(upload.getvalue())
 
+    # Saved under the render's own name, which is also where the ingest looks
+    # for it when nobody uploads one.
+    blocks_path = None
+    if blocks_upload is not None:
+        blocks_path = md_path.with_suffix(".json")
+        blocks_path.write_bytes(blocks_upload.getvalue())
+
     name = lake_name.strip() or Path(upload.name).stem
     out_dir = Path.cwd() / "dokey_out" / slugify(name)
     args = SimpleNamespace(
-        input=md_path, output_dir=out_dir, section_depth=section_depth
+        input=md_path,
+        output_dir=out_dir,
+        section_depth=section_depth,
+        profile=profile,
+        no_items=not write_items,
+        profile=profile,
+        blocks=blocks_path,
+        no_items=not write_items,
     )
 
     log = io.StringIO()
@@ -532,6 +581,8 @@ def _auto_ingest_form(pdf_upload) -> None:
             help=t("toc_page_pin_help"),
         )
         depth = _section_depth_input("auto_depth")
+        profile = _language_profile_input("auto_profile")
+        write_items = _write_items_input("auto_items")
     recover = st.checkbox(t("recover_printed"), value=True, key="auto_recover")
     lake_name = st.text_input(
         t("library_name_optional"), value="", key="auto_name"
@@ -552,6 +603,8 @@ def _auto_ingest_form(pdf_upload) -> None:
             pdf_upload, page_offset, section_overlap, toc_pages, recover, lake_name,
             read_method if has_converter else "never",
             depth,
+            profile,
+            write_items,
         )
 
 

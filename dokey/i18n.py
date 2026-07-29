@@ -62,6 +62,28 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "differ. Auto decides per document, which reads well on its own and "
             "does not compare between documents."
         ),
+        "language_profile": "Numbering conventions",
+        "language_profile_auto": "Detect from the text",
+        "language_profile_none": "None (numerals only)",
+        "language_profile_ko": "Korean",
+        "language_profile_help": (
+            "Which enumerator series dokey knows how to read -- (가), ①, 제2장 "
+            "-- and what a finished sentence looks like, which is how a heading "
+            "is told from a fragment. Detected from the text by default."
+        ),
+        "source_blocks": "Source blocks (optional)",
+        "source_blocks_help": (
+            "The converter's JSON for this render (DoclingDocument). With it, "
+            "sections take the pages they occupy in the original document "
+            "instead of one each. A .json sitting beside the file is found on "
+            "its own; upload one here when it is somewhere else."
+        ),
+        "write_items": "Also address every item (4.1 (1) (가))",
+        "write_items_help": (
+            "Writes silver/items.jsonl: each numbered item of each section with "
+            "its full address and offsets. Useful for extraction; skip it to "
+            "keep the library small."
+        ),
         "hwp_online": "HWP converter: {cmd}",
         "hwp_offline": (
             "No HWP converter found. Install hwp2md, or set one from a terminal: "
@@ -233,6 +255,28 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "절·소절은 각 문서 자신의 번호 체계에서 읽으므로, 사다리가 다른 "
             "문서들에서도 같은 종류의 단위를 고릅니다. 자동은 문서마다 따로 "
             "정하므로 한 문서를 읽기에는 좋지만 문서 간 비교에는 맞지 않습니다."
+        ),
+        "language_profile": "번호 체계",
+        "language_profile_auto": "글에서 자동 판정",
+        "language_profile_none": "없음 (숫자만)",
+        "language_profile_ko": "한국어",
+        "language_profile_help": (
+            "dokey가 읽을 줄 아는 열거 계열((가)·①·제2장)과 문장이 끝났는지 "
+            "판단하는 기준입니다. 표제와 문장 조각을 가르는 데 쓰이며, 기본은 "
+            "글에서 자동으로 정합니다."
+        ),
+        "source_blocks": "원문 블록 (선택)",
+        "source_blocks_help": (
+            "이 마크다운을 만든 변환기의 JSON(DoclingDocument)입니다. 있으면 "
+            "절이 원문에서 실제로 차지한 지면을 갖습니다(없으면 한 절당 한 쪽). "
+            "파일 옆에 같은 이름의 .json이 있으면 알아서 찾고, 다른 곳에 있으면 "
+            "여기에 올리십시오."
+        ),
+        "write_items": "항목까지 주소 매기기 (4.1 (1) (가))",
+        "write_items_help": (
+            "silver/items.jsonl을 만듭니다 — 절 안의 번호 항목마다 전체 주소와 "
+            "위치를 기록합니다. 추출 작업에 쓰이며, 라이브러리를 가볍게 두려면 "
+            "끄십시오."
         ),
         "hwp_online": "HWP 변환기: {cmd}",
         "hwp_offline": (

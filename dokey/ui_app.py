@@ -335,7 +335,7 @@ def backend_panel() -> None:
 
 
 def ingest_panel() -> None:
-    clear_preview()  # each run re-earns its preview below
+    clear_preview()  # each run re-earns the offer made below
     with st.expander(t("ingest_book"), expanded=False):
         upload = st.file_uploader(
             t("document_file"),
@@ -517,20 +517,25 @@ def _preview_pdf(payload: bytes, name: str, depth, profile: str):
     return rows, found.label, level, found.note or "-"
 
 
-def _stash_preview(name: str, rows, source: str, depth, ladder: str) -> None:
-    """Hand the preview to the main pane.
+def _offer_preview(
+    kind: str, name: str, payload: bytes, depth, profile: str, blocks: bytes | None = None
+) -> None:
+    """Hand the main pane a document it could preview, and what to preview it as.
 
-    The forms live in the sidebar, which is the narrowest column on the page,
-    and a table of a document's sections is the widest thing the app has to
-    show. Streamlit runs the sidebar first, so the preview computed there is
-    waiting in session state by the time the main pane renders.
+    The forms live in the sidebar, which is the narrowest column on the page.
+    A table of a document's sections is the widest thing the app shows, and so
+    the offer to look at one belongs beside the table rather than beside the
+    settings. Streamlit runs the sidebar first, so the file and the settings
+    chosen there are already in session state when the main pane draws the
+    control that acts on them.
     """
     st.session_state["_preview"] = {
+        "kind": kind,
         "name": name,
-        "rows": rows,
-        "source": source,
+        "payload": payload,
         "depth": depth,
-        "ladder": ladder,
+        "profile": profile,
+        "blocks": blocks,
     }
 
 
@@ -539,26 +544,47 @@ def clear_preview() -> None:
 
 
 def preview_pane() -> bool:
-    """Render a pending preview in the main pane. True when one was shown."""
-    preview = st.session_state.get("_preview")
-    if not preview:
+    """Offer the staged document's table of contents, and draw it when asked.
+
+    True only when the preview took the pane; a declined offer costs one line
+    and leaves the library listing below it.
+    """
+    request = st.session_state.get("_preview")
+    if not request:
         return False
-    st.subheader(t("preview_toc"))
-    st.caption(preview["name"])
-    rows = preview["rows"]
+    control, named = st.columns([1, 2])
+    show = control.toggle(
+        t("preview_toc"), key="show_preview", help=t("preview_toc_help")
+    )
+    named.caption(request["name"])
+    if not show:
+        return False
+    try:
+        with st.spinner(t("preview_reading")):
+            if request["kind"] == "md":
+                rows, source, depth, ladder = _preview_markdown(
+                    request["payload"],
+                    request["name"],
+                    request["depth"],
+                    request["profile"],
+                    request["blocks"],
+                )
+            else:
+                rows, source, depth, ladder = _preview_pdf(
+                    request["payload"],
+                    request["name"],
+                    request["depth"],
+                    request["profile"],
+                )
+    except Exception as exc:  # a preview must never take the page down with it
+        st.warning(t("preview_failed", error=exc))
+        return False
     if not rows:
         st.info(t("preview_empty"))
         return True
-    st.caption(
-        t(
-            "preview_source",
-            source=preview["source"],
-            count=len(rows),
-            depth=preview["depth"],
-        )
-    )
-    if preview["ladder"] and preview["ladder"] != "-":
-        st.caption(t("preview_ladder", ladder=preview["ladder"]))
+    st.caption(t("preview_source", source=source, count=len(rows), depth=depth))
+    if ladder and ladder != "-":
+        st.caption(t("preview_ladder", ladder=ladder))
     st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True, height=560)
     st.caption(t("preview_not_extracted"))
     return True
@@ -582,23 +608,15 @@ def _md_ingest_form(upload) -> None:
             help=t("source_blocks_help"),
         )
         write_items = _write_items_input("md_items")
-    if upload is not None and st.checkbox(
-        t("preview_toc"), key="md_preview", help=t("preview_toc_help")
-    ):
-        try:
-            with st.spinner(t("preview_reading")):
-                _stash_preview(
-                    upload.name,
-                    *_preview_markdown(
-                        upload.getvalue(),
-                        upload.name,
-                        depth,
-                        profile,
-                        blocks_upload.getvalue() if blocks_upload is not None else None,
-                    ),
-                )
-        except Exception as exc:  # a preview must never break the form
-            st.warning(t("preview_failed", error=exc))
+    if upload is not None:
+        _offer_preview(
+            "md",
+            upload.name,
+            upload.getvalue(),
+            depth,
+            profile,
+            blocks_upload.getvalue() if blocks_upload is not None else None,
+        )
     if st.button(t("run_ingest"), key="md_run", type="primary"):
         run_md_ingest_ui(upload, lake_name, depth, profile, blocks_upload, write_items)
 
@@ -713,19 +731,10 @@ def _auto_ingest_form(pdf_upload) -> None:
     lake_name = st.text_input(
         t("library_name_optional"), value="", key="auto_name"
     )
-    if pdf_upload is not None and st.checkbox(
-        t("preview_toc"), key="auto_preview", help=t("preview_toc_help")
-    ):
-        try:
-            with st.spinner(t("preview_reading")):
-                _stash_preview(
-                    pdf_upload.name,
-                    *_preview_pdf(
-                        pdf_upload.getvalue(), pdf_upload.name, depth, profile
-                    ),
-                )
-        except Exception as exc:
-            st.warning(t("preview_failed", error=exc))
+    if pdf_upload is not None:
+        _offer_preview(
+            "pdf", pdf_upload.name, pdf_upload.getvalue(), depth, profile
+        )
     if st.button(
         t("run_ingest"),
         key="auto_run",

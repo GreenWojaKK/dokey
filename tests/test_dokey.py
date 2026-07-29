@@ -817,12 +817,12 @@ class UiIngestPanelTests(unittest.TestCase):
 class UiPreviewPlacementTests(unittest.TestCase):
     """A table of contents is the widest thing the app shows.
 
-    The forms that produce it live in the sidebar, which is the narrowest
-    column on the page. So the preview is handed to the main pane -- the same
-    space the library listing occupies by default -- and it must be rendered
-    there and nowhere else. The file uploader cannot be driven from
-    ``AppTest``, so this is checked where the placement actually lives: the
-    call site.
+    The forms that stage a document live in the sidebar, which is the narrowest
+    column on the page. So both the offer to preview and the table itself
+    belong to the main pane -- the same space the library listing occupies by
+    default -- and neither may be drawn anywhere else. The file uploader cannot
+    be driven from ``AppTest``, so this is checked where the placement actually
+    lives: the call site.
     """
 
     def _module(self) -> ast.Module:
@@ -836,6 +836,14 @@ class UiPreviewPlacementTests(unittest.TestCase):
             for call in ast.walk(node)
             if isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
         ]
+
+    @staticmethod
+    def _strings(node: ast.AST) -> set[str]:
+        return {
+            child.value
+            for child in ast.walk(node)
+            if isinstance(child, ast.Constant) and isinstance(child.value, str)
+        }
 
     def test_the_preview_is_rendered_once_from_the_main_pane(self) -> None:
         tree = self._module()
@@ -870,6 +878,21 @@ class UiPreviewPlacementTests(unittest.TestCase):
         self.assertTrue(sidebars)
         for block in sidebars:
             self.assertNotIn("preview_pane", self._calls(block))
+
+    def test_the_control_sits_with_the_table_and_not_with_the_form(self) -> None:
+        """The switch that turns the preview on is part of the preview.
+
+        Leaving it in the ingest form would put the question in one column and
+        the answer in another, which is the arrangement this move undid.
+        """
+        tree = self._module()
+        owners = {
+            node.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef)
+            and "preview_toc" in self._strings(node)
+        }
+        self.assertEqual(owners, {"preview_pane"})
 
 
 _HAS_FITZ = importlib.util.find_spec("fitz") is not None

@@ -573,9 +573,16 @@ python -m pip install -e .[ui]
 dokey ui --lake dokey_out\book
 ```
 
+The sidebar is project-based. Add a project folder once and dokey remembers it
+in `~/.dokey/config.json`; every library found under that project appears in
+its folder tree on future launches. Selecting a library switches the search and
+section view immediately. New documents added from the UI are written under
+the active project's `dokey_out/` folder, so there is no library path to reopen
+for each book.
+
 An empty query shows the section manifest for browsing (with recovered book
-pages); results link to the split PDF artifacts. The sidebar's **➕ Add a
-book** panel runs the whole pipeline from the browser, and defaults to
+pages); results link to the split PDF artifacts. The sidebar's **Add a book**
+panel runs the whole pipeline from the browser, and defaults to
 **Auto** — the same smart path as `dokey auto`: upload a PDF and add it, and
 the TOC source, the page offset, and the section overlap are all read from
 the document (no page offset to enter by hand). A wrong guess is correctable

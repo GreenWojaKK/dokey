@@ -13,8 +13,8 @@ LANGUAGE_LABELS = {
 
 TRANSLATIONS: dict[str, dict[str, str]] = {
     "en": {
-        "ingest_book": "➕ Add a book",
-        "ocr_backend": "🔌 OCR backend (bring your own)",
+        "ingest_book": "Add a book",
+        "ocr_backend": "OCR backend (bring your own)",
         "ingesting": "Ingesting {name} ...",
         "recovering_pages": "Recovering printed page numbers ...",
         "skipped_page_recovery": (
@@ -35,6 +35,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "endpoint_placeholder": "e.g. 127.0.0.1:1234 (LM Studio)",
         "save": "Save",
         "detect": "Detect",
+        "recheck": "Recheck",
+        "recheck_help": (
+            "Ask the server again. Its answer is otherwise remembered for half "
+            "a minute so that every click does not wait on it."
+        ),
         "no_backend_found": (
             "No OpenAI-compatible server found on well-known local ports."
         ),
@@ -48,6 +53,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "backend_source_default": "default",
         "pdf": "PDF",
         "document_file": "PDF · HWP/HWPX · Markdown",
+        "choose_document": "Choose a document",
+        "change_document": "Choose another document",
+        "clear_document": "Clear",
+        "choose_document_title": "Choose a book to add",
+        "selected_document": "Selected · {path}",
+        "document_missing": "The selected file is no longer available.",
         "md_input_caption": (
             "Markdown is ingested as-is and unitized by heading (each # section "
             "becomes a unit) — no conversion. Ideal for a Docling/Marker render."
@@ -179,6 +190,34 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "no_library": (
             "No library yet. Use ‘Add a book’ above, or run `dokey ingest`."
         ),
+        "projects": "Projects",
+        "add_project": "Add project folder",
+        "add_project_help": (
+            "Choose a project root once. Its dokey libraries stay available "
+            "here on future launches."
+        ),
+        "add_project_title": "Choose a project folder",
+        "project_folder_path": "Project folder path",
+        "project_folder_path_help": (
+            "Folder-dialog support is unavailable, so enter the project root."
+        ),
+        "not_project_folder": "Project folder does not exist: {path}",
+        "no_project": "No project folder is available.",
+        "active_project_path": "Project · {path}",
+        "project_empty": "No dokey libraries in this project yet.",
+        "project_empty_main": (
+            "This project is ready. Add a document from the sidebar to create "
+            "its first library."
+        ),
+        "project_root": "Project root",
+        "forget_project": "Remove project from list",
+        "forget_project_help": (
+            "Forget this shortcut only. Files inside the project are not deleted."
+        ),
+        "adding_to_project": "Destination project · {project}",
+        "project_breadcrumb": "{project} / {path}",
+        "appearance": "Language",
+        "search_settings": "Search settings",
         "library": "Library",
         "browse_library": "📂 Open a library folder…",
         "browse_library_help": (
@@ -228,8 +267,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "column_folio_source": "page-number source",
     },
     "ko": {
-        "ingest_book": "➕ 책 추가",
-        "ocr_backend": "🔌 OCR 서버 연결",
+        "ingest_book": "책 추가",
+        "ocr_backend": "OCR 서버 연결",
         "ingesting": "{name}을(를) 가져오는 중...",
         "recovering_pages": "책에 인쇄된 페이지 번호를 복원하는 중...",
         "skipped_page_recovery": (
@@ -250,6 +289,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "endpoint_placeholder": "예: 127.0.0.1:1234 (LM Studio)",
         "save": "저장",
         "detect": "자동 찾기",
+        "recheck": "다시 확인",
+        "recheck_help": (
+            "서버 상태를 다시 물어봅니다. 그러지 않으면 30초 동안 기억한 답을 "
+            "쓰며, 매 조작마다 응답을 기다리지 않습니다."
+        ),
         "no_backend_found": (
             "일반적으로 사용하는 로컬 포트에서 OpenAI 호환 서버를 찾지 못했습니다."
         ),
@@ -263,6 +307,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "backend_source_default": "기본값",
         "pdf": "PDF",
         "document_file": "PDF · HWP/HWPX · 마크다운",
+        "choose_document": "문서 선택",
+        "change_document": "다른 문서 선택",
+        "clear_document": "해제",
+        "choose_document_title": "추가할 책 선택",
+        "selected_document": "선택됨 · {path}",
+        "document_missing": "선택한 파일을 더 이상 찾을 수 없습니다.",
         "md_input_caption": (
             "마크다운은 변환 없이 그대로 수집되어 heading 단위로 쪼개집니다"
             "(각 # 절이 한 단위). Docling/Marker가 뽑은 마크다운에 적합합니다."
@@ -391,6 +441,34 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "아직 라이브러리가 없습니다. 위의 ‘책 추가’를 사용하거나 "
             "`dokey ingest`를 실행하세요."
         ),
+        "projects": "프로젝트",
+        "add_project": "프로젝트 폴더 추가",
+        "add_project_help": (
+            "프로젝트 루트를 한 번 선택하면 그 안의 dokey 라이브러리를 "
+            "다음 실행에서도 바로 열 수 있습니다."
+        ),
+        "add_project_title": "프로젝트 폴더 선택",
+        "project_folder_path": "프로젝트 폴더 경로",
+        "project_folder_path_help": (
+            "폴더 선택 창을 사용할 수 없어 프로젝트 루트를 직접 입력합니다."
+        ),
+        "not_project_folder": "프로젝트 폴더가 존재하지 않습니다: {path}",
+        "no_project": "사용할 수 있는 프로젝트 폴더가 없습니다.",
+        "active_project_path": "프로젝트 · {path}",
+        "project_empty": "이 프로젝트에는 아직 dokey 라이브러리가 없습니다.",
+        "project_empty_main": (
+            "프로젝트가 준비되었습니다. 사이드바에서 문서를 추가해 첫 "
+            "라이브러리를 만드세요."
+        ),
+        "project_root": "프로젝트 루트",
+        "forget_project": "목록에서 프로젝트 제거",
+        "forget_project_help": (
+            "바로가기만 지웁니다. 프로젝트 안의 파일은 삭제하지 않습니다."
+        ),
+        "adding_to_project": "저장할 프로젝트 · {project}",
+        "project_breadcrumb": "{project} / {path}",
+        "appearance": "언어",
+        "search_settings": "검색 설정",
         "library": "라이브러리",
         "browse_library": "📂 라이브러리 폴더 열기…",
         "browse_library_help": (

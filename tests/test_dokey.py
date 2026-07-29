@@ -668,7 +668,7 @@ class UiSmokeTests(unittest.TestCase):
 
 
 class FolderPickerTests(unittest.TestCase):
-    """The folder chooser: its own process, and an answer that survives Korean."""
+    """Native choosers: their own process, and answers that survive Korean."""
 
     def test_the_dialog_program_is_valid_python_for_any_path_or_title(self) -> None:
         from dokey import pickers
@@ -705,6 +705,106 @@ class FolderPickerTests(unittest.TestCase):
             return subprocess.CompletedProcess(command, 0, "", "")
 
         self.assertIsNone(pickers.choose_folder("pick", runner=runner))
+
+    def test_file_dialog_starts_in_the_requested_project(self) -> None:
+        from dokey import pickers
+
+        project = Path(r"C:\문서\내 프로젝트")
+        answer = Path(r"C:\Temp\my folder\answer.txt")
+        snippet = pickers.file_dialog_snippet("책 선택", project, answer)
+        compile(snippet, "<file-picker>", "exec")
+        self.assertIn("askopenfilename", snippet)
+        self.assertIn(f"initialdir={json.dumps(str(project))}", snippet)
+
+    def test_a_chosen_file_comes_back_from_the_project_picker(self) -> None:
+        from dokey import pickers
+
+        if not pickers.HAS_FILE_PICKER:
+            self.skipTest("tkinter not installed")
+        project = Path(r"C:\문서\현재 프로젝트")
+        picked = str(project / "책.pdf")
+
+        def runner(command, **kwargs):
+            snippet = command[command.index("-c") + 1]
+            self.assertIn(f"initialdir={json.dumps(str(project))}", snippet)
+            target = Path(json.loads(snippet.rsplit("Path(", 1)[1].split(")")[0]))
+            target.write_text(picked, encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        self.assertEqual(
+            pickers.choose_file("pick", initial_dir=project, runner=runner),
+            picked,
+        )
+
+    def test_selected_file_matches_the_uploaded_file_interface(self) -> None:
+        from dokey import pickers
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "책.md"
+            path.write_bytes(b"# title")
+            selected = pickers.SelectedFile(path)
+            self.assertEqual(selected.name, "책.md")
+            self.assertEqual(selected.getvalue(), b"# title")
+
+
+class ProjectWorkspaceTests(unittest.TestCase):
+    """A project root is selected once; its libraries stay addressable."""
+
+    def _with_config(self, root: Path):
+        return unittest.mock.patch.dict(
+            os.environ, {"DOKEY_CONFIG_DIR": str(root / "config")}
+        )
+
+    def test_projects_are_registered_once_and_remember_their_library(self) -> None:
+        from dokey import workspace
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "project"
+            lake = project / "dokey_out" / "manual"
+            lake.mkdir(parents=True)
+            with self._with_config(root):
+                workspace.register_project(project)
+                workspace.register_project(project)
+                workspace.remember_lake(project, lake)
+
+                self.assertEqual(workspace.saved_projects(), [project.resolve()])
+                self.assertEqual(
+                    workspace.remembered_active_project([project.resolve()]),
+                    project.resolve(),
+                )
+                self.assertEqual(workspace.remembered_lake(project), lake.resolve())
+
+    def test_current_folder_and_cli_library_become_project_roots(self) -> None:
+        from dokey import workspace
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            current = root / "current"
+            external = root / "external"
+            cli_lake = external / "dokey_out" / "book"
+            current.mkdir()
+            cli_lake.mkdir(parents=True)
+            with self._with_config(root):
+                roots = workspace.project_roots(current, cli_lake)
+
+            self.assertEqual(roots, [external.resolve(), current.resolve()])
+
+    def test_forgetting_a_project_never_deletes_its_files(self) -> None:
+        from dokey import workspace
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "project"
+            marker = project / "keep.txt"
+            project.mkdir()
+            marker.write_text("keep", encoding="utf-8")
+            with self._with_config(root):
+                workspace.register_project(project)
+                workspace.forget_project(project)
+
+                self.assertEqual(workspace.saved_projects(), [])
+                self.assertTrue(marker.exists())
 
 
 @unittest.skipUnless(
@@ -766,7 +866,7 @@ class UiIngestPanelTests(unittest.TestCase):
                 else:
                     os.environ["DOKEY_CONFIG_DIR"] = previous_config
 
-    def test_a_library_is_opened_with_a_folder_dialog_not_a_typed_path(self) -> None:
+    def test_a_project_is_registered_with_a_folder_dialog_not_a_typed_path(self) -> None:
         from dokey import pickers
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -781,10 +881,63 @@ class UiIngestPanelTests(unittest.TestCase):
                 buttons = {widget.key for widget in app.button}
                 text_inputs = {widget.key for widget in app.text_input}
                 if pickers.HAS_FOLDER_PICKER:
-                    self.assertIn("lake_browse", buttons)
-                    self.assertNotIn("lake_path", text_inputs)
+                    self.assertIn("project_add", buttons)
+                    self.assertNotIn("project_path", text_inputs)
                 else:
-                    self.assertIn("lake_path", text_inputs)
+                    self.assertIn("project_path", text_inputs)
+            finally:
+                os.chdir(previous_cwd)
+                if previous_config is None:
+                    os.environ.pop("DOKEY_CONFIG_DIR", None)
+                else:
+                    os.environ["DOKEY_CONFIG_DIR"] = previous_config
+
+    def test_the_book_chooser_starts_at_the_active_project(self) -> None:
+        from dokey import pickers
+
+        if not pickers.HAS_FILE_PICKER:
+            self.skipTest("tkinter not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            previous_cwd = Path.cwd()
+            previous_config = os.environ.get("DOKEY_CONFIG_DIR")
+            os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
+            os.chdir(tmp_path)
+            try:
+                with unittest.mock.patch(
+                    "dokey.pickers.choose_file", return_value=None
+                ) as choose:
+                    app = self._app(tmp_path).run()
+                    app.button(key="ing_choose_file").click().run()
+                self.assertFalse(app.exception)
+                choose.assert_called_once()
+                self.assertEqual(
+                    Path(choose.call_args.kwargs["initial_dir"]).resolve(),
+                    tmp_path.resolve(),
+                )
+            finally:
+                os.chdir(previous_cwd)
+                if previous_config is None:
+                    os.environ.pop("DOKEY_CONFIG_DIR", None)
+                else:
+                    os.environ["DOKEY_CONFIG_DIR"] = previous_config
+
+    def test_project_explorer_replaces_the_library_path_selector(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            previous_cwd = Path.cwd()
+            previous_config = os.environ.get("DOKEY_CONFIG_DIR")
+            os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
+            os.chdir(tmp_path)
+            try:
+                app = self._app(tmp_path).run()
+                self.assertFalse(app.exception)
+                self.assertNotIn(
+                    "lake_select", {widget.key for widget in app.selectbox}
+                )
+                labels = {widget.label for widget in app.button}
+                self.assertIn(tmp_path.name, labels)
+                self.assertIn("lake", labels)
             finally:
                 os.chdir(previous_cwd)
                 if previous_config is None:
@@ -812,6 +965,80 @@ class UiIngestPanelTests(unittest.TestCase):
                     os.environ.pop("DOKEY_CONFIG_DIR", None)
                 else:
                     os.environ["DOKEY_CONFIG_DIR"] = previous_config
+
+
+@unittest.skipUnless(
+    importlib.util.find_spec("streamlit") is not None, "streamlit not installed"
+)
+class UiRerunCostTests(unittest.TestCase):
+    """Every widget on the page reruns the whole script.
+
+    So anything the script does unconditionally is paid again on each keystroke,
+    each toggle, each click. Two things used to be: asking an OCR server that is
+    not running whether it is running, which costs the connect timeout, and
+    reading the staged document off disk to hand it to a preview nobody had
+    asked for.
+    """
+
+    def _app(self, tmp_path: Path):
+        from streamlit.testing.v1 import AppTest
+
+        app_path = Path(__file__).resolve().parents[1] / "dokey" / "ui_app.py"
+        write_search_lake(tmp_path / "lake")
+        return AppTest.from_file(str(app_path), default_timeout=30)
+
+    def test_a_rerun_does_not_wait_on_the_ocr_server_again(self) -> None:
+        import streamlit as st
+
+        from dokey import backends
+
+        calls = []
+
+        def counted(url, timeout=1.0, fetch=None):
+            calls.append(url)
+            return None
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            previous_cwd = Path.cwd()
+            previous_config = os.environ.get("DOKEY_CONFIG_DIR")
+            os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
+            os.chdir(tmp_path)
+            try:
+                st.cache_data.clear()  # start from a cold health answer
+                with unittest.mock.patch.object(backends, "probe", counted):
+                    app = self._app(tmp_path).run()
+                    self.assertFalse(app.exception)
+                    app.run()  # any widget would do this
+                    self.assertFalse(app.exception)
+                self.assertEqual(len(calls), 1, calls)
+            finally:
+                st.cache_data.clear()
+                os.chdir(previous_cwd)
+                if previous_config is None:
+                    os.environ.pop("DOKEY_CONFIG_DIR", None)
+                else:
+                    os.environ["DOKEY_CONFIG_DIR"] = previous_config
+
+    def test_staging_a_document_for_preview_does_not_read_it(self) -> None:
+        """The offer is made every rerun; the read must wait for the answer.
+
+        A locally chosen file answers ``getvalue()`` with a full disk read, so
+        making the offer out of bytes turned every click into a re-read of the
+        book.
+        """
+        path = Path(__file__).resolve().parents[1] / "dokey" / "ui_app.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        staging = {"_offer_preview", "_staged_key", "_md_ingest_form", "_auto_ingest_form"}
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef) or node.name not in staging:
+                continue
+            reads = [
+                child.attr
+                for child in ast.walk(node)
+                if isinstance(child, ast.Attribute) and child.attr == "getvalue"
+            ]
+            self.assertEqual(reads, [], f"{node.name} reads the document")
 
 
 class UiPreviewPlacementTests(unittest.TestCase):

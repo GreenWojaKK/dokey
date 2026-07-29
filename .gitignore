@@ -46,6 +46,11 @@ credentials.json
 AGENTS.md
 CLAUDE.md
 GEMINI.md
+# 디자인 QA 산출물도 같은 이유로 제외한다. 참조·비교 스크린샷과 검토 노트는
+# 리뷰 시점의 화면일 뿐 저장소의 산출물이 아니고, 노트에 로컬 절대 경로가
+# 그대로 적힌다.
+design-qa.md
+.design-qa-assets/
 
 # --- OS 부스러기
 .DS_Store

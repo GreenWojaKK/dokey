@@ -23,9 +23,11 @@ import json
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 HAS_FOLDER_PICKER = importlib.util.find_spec("tkinter") is not None
+HAS_FILE_PICKER = HAS_FOLDER_PICKER
 
 # How long to leave the dialog open before giving up on it. Ten minutes is not
 # a guess about how long choosing takes; it is a backstop against a dialog that
@@ -45,10 +47,55 @@ root.destroy()
 Path({answer}).write_text(chosen, encoding="utf-8")
 """
 
+_FILE_SNIPPET = """
+import tkinter as tk
+from tkinter import filedialog
+from pathlib import Path
+
+root = tk.Tk()
+root.withdraw()
+root.attributes("-topmost", True)
+chosen = filedialog.askopenfilename(
+    title={title},
+    initialdir={initial_dir},
+    filetypes=[
+        ("Dokey documents", "*.pdf *.hwp *.hwpx *.md *.markdown"),
+        ("All files", "*.*"),
+    ],
+) or ""
+root.destroy()
+Path({answer}).write_text(chosen, encoding="utf-8")
+"""
+
+
+@dataclass(frozen=True)
+class SelectedFile:
+    """A local selection with the small UploadedFile interface ingest expects."""
+
+    path: Path
+
+    @property
+    def name(self) -> str:
+        return self.path.name
+
+    def getvalue(self) -> bytes:
+        return self.path.read_bytes()
+
 
 def folder_dialog_snippet(title: str, answer_path: Path) -> str:
     """The child program that shows the dialog and writes down the answer."""
     return _SNIPPET.format(title=json.dumps(title), answer=json.dumps(str(answer_path)))
+
+
+def file_dialog_snippet(
+    title: str, initial_dir: str | Path, answer_path: Path
+) -> str:
+    """The child program for a file chooser rooted at the active project."""
+    return _FILE_SNIPPET.format(
+        title=json.dumps(title),
+        initial_dir=json.dumps(str(initial_dir)),
+        answer=json.dumps(str(answer_path)),
+    )
 
 
 def choose_folder(title: str, *, runner=subprocess.run) -> str | None:
@@ -67,6 +114,35 @@ def choose_folder(title: str, *, runner=subprocess.run) -> str | None:
         try:
             runner(
                 [sys.executable, "-c", folder_dialog_snippet(title, answer)],
+                capture_output=True,
+                text=True,
+                timeout=DIALOG_TIMEOUT,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        chosen = answer.read_text(encoding="utf-8").strip()
+    return chosen or None
+
+
+def choose_file(
+    title: str,
+    *,
+    initial_dir: str | Path,
+    runner=subprocess.run,
+) -> str | None:
+    """Choose a supported document, starting in ``initial_dir``."""
+    if not HAS_FILE_PICKER:
+        return None
+    with tempfile.TemporaryDirectory(prefix="dokey_pick_") as tmp:
+        answer = Path(tmp) / "file.txt"
+        answer.write_text("", encoding="utf-8")
+        try:
+            runner(
+                [
+                    sys.executable,
+                    "-c",
+                    file_dialog_snippet(title, initial_dir, answer),
+                ],
                 capture_output=True,
                 text=True,
                 timeout=DIALOG_TIMEOUT,

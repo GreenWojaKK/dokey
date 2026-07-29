@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import importlib.util
 import html
 import io
 import os
@@ -29,7 +30,9 @@ from dokey import cli as dokey_cli
 from dokey import convert as convertlib
 from dokey import hwp as hwplib
 from dokey import mdunit
+from dokey import blocks as blockslib
 from dokey import search as searchlib
+from dokey import tocsource
 from dokey.i18n import (
     LANGUAGE_LABELS,
     SUPPORTED_LANGUAGES,
@@ -453,6 +456,76 @@ def _write_items_input(key: str) -> bool:
     )
 
 
+@st.cache_data(show_spinner=False, max_entries=8)
+def _preview_markdown(payload: bytes, name: str, depth, profile: str, blocks: bytes | None):
+    """What unitizing this render would produce, without writing anything."""
+    text = payload.decode("utf-8", errors="replace")
+    result = mdunit.unitize(text, fallback_title=Path(name).stem, max_level=depth, profile=profile)
+    pages = None
+    if blocks:
+        work = Path(tempfile.mkdtemp(prefix="dokey_preview_"))
+        stream = work / "blocks.json"
+        stream.write_bytes(blocks)
+        parsed = blockslib.read_blocks(stream)
+        if parsed:
+            pages = blockslib.locate_sections(result.sections, parsed)
+    rows = []
+    for index, section in enumerate(result.sections):
+        span = pages[index] if pages else None
+        rows.append(
+            {
+                t("preview_level"): section.level,
+                t("preview_title"): section.title,
+                t("preview_pages"): f"{span[0]}–{span[1]}" if span else "",
+                t("preview_chars"): len(mdunit.section_page_text(section)),
+            }
+        )
+    ladder = " > ".join(result.report.heading_ladder.get("order", ())) or "-"
+    return rows, "the document's own headings", result.report.max_level, ladder
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _preview_pdf(payload: bytes, name: str, depth, profile: str):
+    """The table of contents dokey would split this PDF on.
+
+    The same resolver the ingest uses, minus OCR: a preview must not spend
+    minutes rendering the front matter through a model.
+    """
+    work = Path(tempfile.mkdtemp(prefix="dokey_preview_"))
+    pdf_path = work / name
+    pdf_path.write_bytes(payload)
+    reader = dokey_cli.open_reader(pdf_path)
+    level = depth if isinstance(depth, int) else (2 if depth == "subclause" else 1)
+    found = tocsource.resolve(
+        reader,
+        pdf_path,
+        max_level=level,
+        profile=profile,
+        ocr_client=None,  # a preview never waits on OCR
+        allow_printed=importlib.util.find_spec("fitz") is not None,
+    )
+    rows = [
+        {
+            t("preview_level"): entry.level,
+            t("preview_title"): entry.title,
+            t("preview_pages"): entry.page,
+            t("preview_chars"): "",
+        }
+        for entry in found.entries
+    ]
+    return rows, found.label, level, found.note or "-"
+
+
+def _preview_panel(rows, source: str, depth, ladder: str) -> None:
+    if not rows:
+        st.info(t("preview_empty"))
+        return
+    st.caption(t("preview_source", source=source, count=len(rows), depth=depth))
+    if ladder and ladder != "-":
+        st.caption(t("preview_ladder", ladder=ladder))
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+
+
 def _md_ingest_form(upload) -> None:
     """Markdown/Markdown-render ingest: unitized by heading, no converter needed.
 
@@ -471,6 +544,21 @@ def _md_ingest_form(upload) -> None:
             help=t("source_blocks_help"),
         )
         write_items = _write_items_input("md_items")
+    if upload is not None and st.checkbox(
+        t("preview_toc"), key="md_preview", help=t("preview_toc_help")
+    ):
+        try:
+            with st.spinner(t("preview_reading")):
+                rows, source, used_depth, ladder = _preview_markdown(
+                    upload.getvalue(),
+                    upload.name,
+                    depth,
+                    profile,
+                    blocks_upload.getvalue() if blocks_upload is not None else None,
+                )
+            _preview_panel(rows, source, used_depth, ladder)
+        except Exception as exc:  # a preview must never break the form
+            st.warning(t("preview_failed", error=exc))
     if st.button(t("run_ingest"), key="md_run", type="primary"):
         run_md_ingest_ui(upload, lake_name, depth, profile, blocks_upload, write_items)
 
@@ -585,6 +673,17 @@ def _auto_ingest_form(pdf_upload) -> None:
     lake_name = st.text_input(
         t("library_name_optional"), value="", key="auto_name"
     )
+    if pdf_upload is not None and st.checkbox(
+        t("preview_toc"), key="auto_preview", help=t("preview_toc_help")
+    ):
+        try:
+            with st.spinner(t("preview_reading")):
+                rows, source, used_depth, note = _preview_pdf(
+                    pdf_upload.getvalue(), pdf_upload.name, depth, profile
+                )
+            _preview_panel(rows, source, used_depth, note)
+        except Exception as exc:
+            st.warning(t("preview_failed", error=exc))
     if st.button(
         t("run_ingest"),
         key="auto_run",

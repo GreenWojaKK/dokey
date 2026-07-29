@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from pypdf import PdfReader, PdfWriter
@@ -24,6 +25,7 @@ from dokey import ocr as ocrlib
 from dokey import paths as pathslib
 from dokey import profiles as profileslib
 from dokey import search as searchlib
+from dokey import tocsource
 from dokey.cli import main
 from dokey.models import TocEntry
 from dokey.ranges import build_ranges
@@ -3022,6 +3024,66 @@ class SourceBlockPageTests(unittest.TestCase):
             self.assertIsNone(blockslib.find_source_blocks(render))
             (Path(tmp) / "doc.json").write_text('{"texts": []}', encoding="utf-8")
             self.assertEqual(blockslib.find_source_blocks(render).name, "doc.json")
+
+
+class TocSourceTests(unittest.TestCase):
+    """One cascade, asked by the ingest and by the app's preview alike."""
+
+    class _Reader:
+        def __init__(self, pages, outline=()):
+            self.pages = [_FakePage(text) for text in pages]
+            self.outline = list(outline)
+
+    BODY = [
+        "목차\n1. 적용범위\n2. 목적\n3. 용어의 정의\n",
+        "1. 적용범위\n\n이 규칙은 조직에 적용한다.\n",
+        "2. 목적\n\n환경 측면을 파악함을 목적으로 한다.\n",
+        "3. 용어의 정의\n\n용어는 다음과 같다.\n",
+    ]
+
+    def test_the_body_answers_when_no_contents_page_can_be_read(self) -> None:
+        found = tocsource.resolve(
+            self._Reader(self.BODY), Path("x.pdf"), allow_printed=False
+        )
+        self.assertEqual(found.source, "derived")
+        self.assertTrue(found.physical_pages)
+        self.assertEqual([entry.page for entry in found.entries], [2, 3, 4])
+
+    def test_a_document_with_nothing_to_read_says_so(self) -> None:
+        found = tocsource.resolve(
+            self._Reader(["표지", "본문 문단입니다.", ""]),
+            Path("x.pdf"),
+            allow_printed=False,
+        )
+        self.assertFalse(found.found)
+        self.assertEqual(found.source, "none")
+
+    def test_ocr_is_never_reached_without_a_client(self) -> None:
+        # A preview passes no client, and must come back rather than spend
+        # minutes rendering the front matter through a model.
+        called = []
+
+        def refuse(*args, **kwargs):
+            called.append(kwargs.get("ocr_client"))
+            raise ValueError("no contents page")
+
+        with unittest.mock.patch.object(tocsource, "read_page_toc", refuse):
+            found = tocsource.resolve(
+                self._Reader(["표지", "본문."]), Path("x.pdf"), ocr_client=None
+            )
+        self.assertEqual(found.source, "none")
+        self.assertNotIn("client", [type(c).__name__ for c in called])
+
+    def test_the_depth_asked_for_reaches_the_body_reader(self) -> None:
+        pages = ["1. 적용범위\n\n본문.\n\n1.1 세부\n\n본문.\n\n2. 목적\n\n본문.\n"]
+        shallow = tocsource.resolve(
+            self._Reader(pages), Path("x.pdf"), max_level=1, allow_printed=False
+        )
+        deep = tocsource.resolve(
+            self._Reader(pages), Path("x.pdf"), max_level=2, allow_printed=False
+        )
+        self.assertNotIn("1.1 세부", [entry.title for entry in shallow.entries])
+        self.assertIn("1.1 세부", [entry.title for entry in deep.entries])
 
 
 class BodyDerivedTocTests(unittest.TestCase):

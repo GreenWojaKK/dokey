@@ -29,6 +29,7 @@ from . import offset as offsetlib
 from . import sheets as sheetslib
 from . import outline as outlinelib
 from . import search as searchlib
+from . import tocsource
 from .manifest import write_manifest_rows, write_manifests, write_toc
 from .models import TocEntry
 from .outline import read_outline_toc
@@ -1062,46 +1063,24 @@ def run_auto(args: argparse.Namespace) -> None:
                 "scan, `dokey convert` runs a BYO layout converter over it."
             )
 
-    # TOC source cascade: embedded outline first, then the book's own printed
-    # contents page(s) (word geometry; OCR fallback for scanned books).
-    entries: list[TocEntry] = []
+    # TOC source cascade, one implementation shared with the app's preview:
+    # embedded outline, the book's own printed contents page, the document's
+    # numbered headings, and OCR only when the text layer had nothing.
     report: offsetlib.SmokeReport | None = None
-    try:
-        entries = read_outline_toc(reader, max_level=_outline_max_level(args))
-    except ValueError:
-        pass
-
-    # An outline that leaves the book in one piece is metadata about the file
-    # rather than a table of contents, so it is asked to show that it divides
-    # the document before it is used.
-    printed_won = False
-    if entries and not outlinelib.divides_document(entries, len(reader.pages)):
-        share = outlinelib.largest_share(entries, len(reader.pages))
-        counted = (
-            "entry leaves" if len(entries) == 1 else f"{len(entries)} entries leave"
-        )
-        print(
-            f"TOC: the embedded outline's {counted} {share:.0%} of the document "
-            "under one heading, which is not a division of it"
-        )
-        printed = _printed_toc_if_better(args, input_pdf, entries, len(reader.pages))
-        if printed:
-            entries = printed
-            printed_won = True
-        else:
-            print("  nothing better on the printed pages; keeping the outline")
-
-    # An entry whose page is already a physical PDF page needs no offset and no
-    # smoke test: an outline's destination and a heading found in the body both
-    # say where they are, where a printed contents page only says what the book
-    # calls that place.
-    physical_pages = bool(entries) and not printed_won
-    if printed_won:
-        print(f"TOC: {len(entries)} entries from the printed contents page(s)")
-    elif entries:
-        print(f"TOC: {len(entries)} entries from the embedded PDF outline")
-        page_offset = 0 if args.page_offset is None else args.page_offset
-    else:
+    endpoint, _ = backendslib.resolve_endpoint(args.ocr_endpoint)
+    found = tocsource.resolve(
+        reader,
+        input_pdf,
+        max_level=_outline_max_level(args),
+        profile=getattr(args, "profile", "auto"),
+        toc_pages=args.toc_page,
+        ocr_client=ocrlib.OcrClient(endpoint, max_tokens=2048),
+        allow_printed=has_fitz,
+    )
+    entries = found.entries
+    if found.note:
+        print(f"TOC: {found.note}")
+    if not entries:
         if not has_fitz:
             raise SystemExit(
                 "This PDF has no embedded outline, and reading its printed "
@@ -1109,56 +1088,21 @@ def run_auto(args: argparse.Namespace) -> None:
                 "  python -m pip install -e .[ocr]\n"
                 "or supply a TOC file via `dokey ingest --toc ...`."
             )
-        try:
-            # The text layer first, and without the OCR fallback: OCR renders
-            # every page of the front matter and calls a model per page, which
-            # is minutes of work on a document whose own text is right there.
-            # Measured on a 7-page rule: 41 seconds spent failing at OCR,
-            # against 0.01 seconds to read the same structure off the body.
-            entries = read_page_toc(
-                input_pdf, toc_pages=args.toc_page, ocr_client=None
-            )
-            print(f"TOC: {len(entries)} entries from the printed contents page(s)")
-        except ValueError as exc:
-            # A contents page that lists titles without page numbers is not a
-            # contents page to a reader looking for title-and-page pairs, and
-            # neither is a document that prints no contents at all. Both still
-            # number their clauses, and every clause appears in the body where
-            # it starts -- so the last thing to try before giving up is the
-            # document's own headings.
-            entries = bodytoc.derive_toc(
-                [page.extract_text() or "" for page in reader.pages],
-                profile=getattr(args, "profile", "auto"),
-                max_level=_outline_max_level(args),
-            )
-            if entries:
-                print(
-                    f"TOC: {len(entries)} entries derived from the document's "
-                    "own numbered headings (no contents page with page numbers)"
-                )
-                # Derived entries carry the page they were found on, like an
-                # outline's destinations: physical pages, so no offset applies.
-                page_offset = 0 if args.page_offset is None else args.page_offset
-                physical_pages = True
-            else:
-                # Nothing readable in the text layer at all: now it is worth
-                # paying for OCR, which is what it is for.
-                endpoint, _ = backendslib.resolve_endpoint(args.ocr_endpoint)
-                print(f"No text-layer TOC; trying OCR at {endpoint}")
-                try:
-                    entries = read_page_toc(
-                        input_pdf,
-                        toc_pages=args.toc_page,
-                        ocr_client=ocrlib.OcrClient(endpoint, max_tokens=2048),
-                    )
-                except ValueError:
-                    raise SystemExit(str(exc)) from exc
-                print(
-                    f"TOC: {len(entries)} entries from the printed contents "
-                    "page(s), read by OCR"
-                )
-                # An OCR-read contents page prints the book's own page numbers,
-                # so it takes the offset calibration below like any other.
+        raise SystemExit(
+            "No table of contents found: the PDF has no outline, no contents "
+            "page dokey could read, and no numbered headings in its text. "
+            "Supply one with `dokey ingest --toc ...`, or pin the contents "
+            "page with --toc-page N."
+        )
+    print(f"TOC: {len(entries)} entries from {found.label}")
+
+    # An entry whose page is already a physical PDF page needs no offset and no
+    # smoke test: an outline's destination and a heading found in the body both
+    # say where they are, where a printed contents page only says what the book
+    # calls that place.
+    physical_pages = found.physical_pages
+    if physical_pages:
+        page_offset = 0 if args.page_offset is None else args.page_offset
 
     if not physical_pages:
         # A page offset prior: the flag if given, else the running folios,

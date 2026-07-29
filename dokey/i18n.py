@@ -84,6 +84,23 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "its full address and offsets. Useful for extraction; skip it to "
             "keep the library small."
         ),
+        "preview_toc": "Preview the table of contents",
+        "preview_toc_help": (
+            "Read the document and show the sections this setting would make, "
+            "before anything is written. Nothing is extracted until you add it."
+        ),
+        "preview_reading": "Reading the document ...",
+        "preview_source": "Table of contents from {source} — {count} entries, split at depth {depth}",
+        "preview_ladder": "Numbering read as: {ladder}",
+        "preview_empty": (
+            "No table of contents found in this document. Extraction would have "
+            "nothing to split on."
+        ),
+        "preview_failed": "Could not read this document: {error}",
+        "preview_title": "Section",
+        "preview_level": "Depth",
+        "preview_pages": "Pages",
+        "preview_chars": "Characters",
         "hwp_online": "HWP converter: {cmd}",
         "hwp_offline": (
             "No HWP converter found. Install hwp2md, or set one from a terminal: "
@@ -278,6 +295,22 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "위치를 기록합니다. 추출 작업에 쓰이며, 라이브러리를 가볍게 두려면 "
             "끄십시오."
         ),
+        "preview_toc": "목차 미리보기",
+        "preview_toc_help": (
+            "문서를 읽어 이 설정이 만들 절을 보여줍니다. 아무것도 쓰지 않으며, "
+            "추가를 누르기 전까지 추출은 일어나지 않습니다."
+        ),
+        "preview_reading": "문서를 읽는 중 ...",
+        "preview_source": "목차 출처: {source} — 항목 {count}개, 깊이 {depth}로 분할",
+        "preview_ladder": "번호 체계 판독: {ladder}",
+        "preview_empty": (
+            "이 문서에서 목차를 찾지 못했습니다. 추출해도 나눌 기준이 없습니다."
+        ),
+        "preview_failed": "문서를 읽지 못했습니다: {error}",
+        "preview_title": "절",
+        "preview_level": "깊이",
+        "preview_pages": "지면",
+        "preview_chars": "글자수",
         "hwp_online": "HWP 변환기: {cmd}",
         "hwp_offline": (
             "HWP 변환기를 찾지 못했습니다. hwp2md를 설치하거나, 터미널에서 "

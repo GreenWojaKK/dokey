@@ -651,6 +651,50 @@ def _title_echo_ratio(left: str, right: str) -> float:
     return difflib.SequenceMatcher(None, left, right).ratio()
 
 
+SECTION_DEPTH_CHOICES = ("auto", "clause", "subclause")
+
+
+def _clause_rung(heads: list[_Head], ladder) -> int:
+    """The rung this document heads its clauses on.
+
+    Not every document starts at rung 1: one that opens with annexes or parts
+    puts its clauses a rung below them. Splitting at "the clause rung" rather
+    than at "rung 1" is what makes a depth mean the same thing in two documents
+    whose ladders differ.
+    """
+    rungs = [
+        ladder.depth(head.numbering)
+        for head in heads
+        if head.verdict == "section" and head.addressed
+    ]
+    return min(rungs) if rungs else 1
+
+
+def _resolve_depth(
+    requested, scan: _Scan, ladder, sizes: dict[int, list[int]]
+) -> int | None:
+    """Turn what the caller asked for into a rung.
+
+    ``clause``/``subclause`` are read from the document's own ladder, so the
+    same word picks the same *kind* of unit everywhere. A number is that rung,
+    everywhere, whatever it holds. ``auto`` lets the pieces decide, which is
+    the friendliest default and the least comparable between documents.
+    """
+    if isinstance(requested, int):
+        return requested
+    if requested in (None, "auto"):
+        return _choose_max_level(scan, sizes)
+    clause = _clause_rung(scan.heads, ladder)
+    if requested == "clause":
+        return clause
+    if requested == "subclause":
+        return clause + 1
+    raise ValueError(
+        f"Unknown section depth: {requested!r} "
+        f"(use a number or one of {', '.join(SECTION_DEPTH_CHOICES)})"
+    )
+
+
 def _choose_max_level(scan: _Scan, lengths: dict[int, list[int]]) -> int:
     """How deep to split when the caller did not say.
 
@@ -792,7 +836,7 @@ def unitize(
     markdown: str,
     *,
     fallback_title: str = "Document",
-    max_level: int | None = None,
+    max_level: int | str | None = None,
     profile: str | None = "auto",
 ) -> UnitizeResult:
     """Unitize Markdown into sections, reporting what was dropped or demoted.
@@ -861,12 +905,18 @@ def unitize(
     derived = _assign_levels(scan.heads, heading_ladder)
     report.derived_levels = derived
 
-    if max_level is not None:
-        effective_max = max_level
-    elif derived:
-        effective_max = _choose_max_level(scan, _section_sizes(scan, drop_lines))
+    if derived or isinstance(max_level, int):
+        effective_max = _resolve_depth(
+            max_level, scan, heading_ladder, _section_sizes(scan, drop_lines)
+        )
     else:
-        effective_max = None
+        # The file states its own hierarchy; a named depth still applies, but
+        # "auto" leaves the author's levels alone.
+        effective_max = (
+            _resolve_depth(max_level, scan, heading_ladder, _section_sizes(scan, drop_lines))
+            if max_level not in (None, "auto")
+            else None
+        )
     report.max_level = effective_max
     if effective_max is not None:
         for head in scan.heads:
@@ -956,7 +1006,7 @@ def split_markdown(
     markdown: str,
     *,
     fallback_title: str = "Document",
-    max_level: int | None = None,
+    max_level: int | str | None = None,
     profile: str | None = "auto",
 ) -> list[Section]:
     """Unitize Markdown by heading; see :func:`unitize` for the reporting form."""

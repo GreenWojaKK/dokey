@@ -97,6 +97,21 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     auto.add_argument(
+        "--section-depth",
+        type=_section_depth_arg,
+        default=None,
+        metavar="DEPTH",
+        help=(
+            "How deep to split into sections: 'clause' (the rung the document "
+            "heads its clauses on), 'subclause' (one below that, 5.1), a rung "
+            "number, or 'auto'. 'clause' and 'subclause' mean the same kind of "
+            "unit in every document even when their ladders differ; a number "
+            "means the same rung everywhere; 'auto' (the default) descends "
+            "until the sections are of citable size, which is per-document and "
+            "so is not comparable between them."
+        ),
+    )
+    auto.add_argument(
         "--blocks",
         type=Path,
         default=None,
@@ -273,6 +288,21 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Section depth for the converted Markdown (see `dokey auto`). Default: 1.",
+    )
+    convert.add_argument(
+        "--section-depth",
+        type=_section_depth_arg,
+        default=None,
+        metavar="DEPTH",
+        help=(
+            "How deep to split into sections: 'clause' (the rung the document "
+            "heads its clauses on), 'subclause' (one below that, 5.1), a rung "
+            "number, or 'auto'. 'clause' and 'subclause' mean the same kind of "
+            "unit in every document even when their ladders differ; a number "
+            "means the same rung everywhere; 'auto' (the default) descends "
+            "until the sections are of citable size, which is per-document and "
+            "so is not comparable between them."
+        ),
     )
     convert.add_argument(
         "--blocks",
@@ -1246,6 +1276,30 @@ def _no_converter_message() -> str:
     )
 
 
+def _section_depth_arg(value: str):
+    """``auto``, ``clause``, ``subclause``, or a rung number."""
+    if value in mdunit.SECTION_DEPTH_CHOICES:
+        return value
+    try:
+        depth = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"expected a number or one of {', '.join(mdunit.SECTION_DEPTH_CHOICES)}, "
+            f"got {value!r}"
+        ) from None
+    if depth < 1:
+        raise argparse.ArgumentTypeError("section depth starts at 1")
+    return depth
+
+
+def _section_depth(args: argparse.Namespace):
+    """What the caller asked for, with the older flag still honoured."""
+    requested = getattr(args, "section_depth", None)
+    if requested is not None:
+        return requested
+    return getattr(args, "outline_max_level", None)
+
+
 def _outline_max_level(args: argparse.Namespace) -> int:
     """Split depth for the PDF outline path.
 
@@ -1254,8 +1308,12 @@ def _outline_max_level(args: argparse.Namespace) -> int:
     means *honor the file's own heading levels*. For an outline, saying nothing
     still means depth 1, which is what it always meant.
     """
-    level = getattr(args, "outline_max_level", None)
-    return 1 if level is None else level
+    level = _section_depth(args)
+    if isinstance(level, int):
+        return level
+    # An outline states its own levels, so a named depth maps to a count:
+    # clauses are its top level, subclauses one below.
+    return 2 if level == "subclause" else 1
 
 
 def _printed_toc_if_better(
@@ -1611,7 +1669,7 @@ def run_hwp_ingest(args: argparse.Namespace) -> None:
         output_dir=output_dir,
         fallback_title=input_path.stem,
         source_label="HWP",
-        max_level=getattr(args, "outline_max_level", None),
+        max_level=_section_depth(args),
         profile=getattr(args, "profile", "auto"),
         write_items=not getattr(args, "no_items", False),
     )
@@ -1692,7 +1750,7 @@ def run_md_ingest(args: argparse.Namespace) -> None:
         output_dir=output_dir,
         fallback_title=input_path.stem,
         source_label="Markdown",
-        max_level=getattr(args, "outline_max_level", None),
+        max_level=_section_depth(args),
         profile=getattr(args, "profile", "auto"),
         write_items=not getattr(args, "no_items", False),
         # A converter that wrote a block stream beside the render kept the
@@ -1750,7 +1808,7 @@ def _convert_then_ingest(
         output_dir=output_dir,
         fallback_title=input_path.stem,
         source_label="document",
-        max_level=getattr(args, "outline_max_level", None),
+        max_level=_section_depth(args),
         profile=getattr(args, "profile", "auto"),
         write_items=not getattr(args, "no_items", False),
         source_blocks=next(
@@ -1868,7 +1926,7 @@ def run_convert(args: argparse.Namespace) -> None:
         output_dir=output_dir,
         fallback_title=input_path.stem,
         source_label="document",
-        max_level=getattr(args, "outline_max_level", None),
+        max_level=_section_depth(args),
         profile=getattr(args, "profile", "auto"),
         write_items=not getattr(args, "no_items", False),
         source_blocks=(

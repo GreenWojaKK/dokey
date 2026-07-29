@@ -2711,6 +2711,31 @@ class MarkdownUnitizeTests(unittest.TestCase):
         self.assertFalse(result.report.derived_levels)
         self.assertIsNone(result.report.max_level)
 
+    def test_clause_depth_means_the_same_unit_in_documents_that_differ(self) -> None:
+        # One document heads its clauses at rung 1; the other puts an annex
+        # above them, so its clauses sit a rung lower. "clause" picks the
+        # clauses in both, where a fixed number would pick different things.
+        plain = "## 1. 목 적\n\n본문.\n\n## 1.1 세부\n\n본문.\n\n## 2. 적용범위\n\n본문.\n"
+        with_annex = (
+            "## <부록 1>\n\n부록 서문.\n\n## 1. 목 적\n\n본문.\n\n"
+            "## 1.1 세부\n\n본문.\n\n## 2. 적용범위\n\n본문.\n"
+        )
+        for markdown in (plain, with_annex):
+            result = self.sections(markdown, max_level="clause")
+            titles = [section.title for section in result.sections]
+            self.assertIn("1. 목 적", titles)
+            self.assertIn("2. 적용범위", titles)
+            self.assertNotIn("1.1 세부", titles)
+
+    def test_subclause_depth_goes_one_rung_further(self) -> None:
+        markdown = "## 1. 목 적\n\n본문.\n\n## 1.1 세부\n\n본문.\n\n## 2. 적용범위\n\n본문.\n"
+        result = self.sections(markdown, max_level="subclause")
+        self.assertIn("1.1 세부", [section.title for section in result.sections])
+
+    def test_an_unknown_depth_is_refused(self) -> None:
+        with self.assertRaises(ValueError):
+            self.sections("## 1. 목 적\n\n본문.\n", max_level="deepest")
+
     def test_explicit_max_level_caps_the_document_own_levels(self) -> None:
         markdown = "# Guide\n\nIntro.\n\n## Setup\n\nSteps.\n\n### Detail\n\nMore.\n"
         result = self.sections(markdown, max_level=1)

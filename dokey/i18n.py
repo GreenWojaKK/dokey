@@ -14,6 +14,7 @@ LANGUAGE_LABELS = {
 TRANSLATIONS: dict[str, dict[str, str]] = {
     "en": {
         "ingest_book": "Add a book",
+        "close_import": "Close",
         "ocr_backend": "OCR backend (bring your own)",
         "ingesting": "Ingesting {name} ...",
         "recovering_pages": "Recovering printed page numbers ...",
@@ -206,8 +207,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "active_project_path": "Project · {path}",
         "project_empty": "No dokey libraries in this project yet.",
         "project_empty_main": (
-            "This project is ready. Add a document from the sidebar to create "
-            "its first library."
+            "This project is ready. Add a document below to create its first "
+            "library."
         ),
         "project_root": "Project root",
         "forget_project": "Remove project from list",
@@ -268,6 +269,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "ko": {
         "ingest_book": "책 추가",
+        "close_import": "닫기",
         "ocr_backend": "OCR 서버 연결",
         "ingesting": "{name}을(를) 가져오는 중...",
         "recovering_pages": "책에 인쇄된 페이지 번호를 복원하는 중...",
@@ -457,7 +459,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "active_project_path": "프로젝트 · {path}",
         "project_empty": "이 프로젝트에는 아직 dokey 라이브러리가 없습니다.",
         "project_empty_main": (
-            "프로젝트가 준비되었습니다. 사이드바에서 문서를 추가해 첫 "
+            "프로젝트가 준비되었습니다. 아래에서 문서를 추가해 첫 "
             "라이브러리를 만드세요."
         ),
         "project_root": "프로젝트 루트",

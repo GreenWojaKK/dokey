@@ -811,7 +811,7 @@ class ProjectWorkspaceTests(unittest.TestCase):
     importlib.util.find_spec("streamlit") is not None, "streamlit not installed"
 )
 class UiIngestPanelTests(unittest.TestCase):
-    """The Add-a-book panel offers the smart auto path by default."""
+    """The Add-a-book view offers the smart auto path by default."""
 
     def _app(self, tmp_path: Path):
         from streamlit.testing.v1 import AppTest
@@ -819,6 +819,44 @@ class UiIngestPanelTests(unittest.TestCase):
         app_path = Path(__file__).resolve().parents[1] / "dokey" / "ui_app.py"
         write_search_lake(tmp_path / "lake")
         return AppTest.from_file(str(app_path), default_timeout=30)
+
+    def _importing(self, tmp_path: Path):
+        """The import view, opened the way a person opens it."""
+        app = self._app(tmp_path).run()
+        app.button(key="import_open").click().run()
+        return app
+
+    def test_the_import_form_takes_the_pane_and_leaves_the_sidebar_to_navigation(
+        self,
+    ) -> None:
+        """Ten stacked controls in a 300 px column is what this change undid.
+
+        The sidebar keeps the way in and the project tree; every field of the
+        form is drawn in the main pane, where a row of them fits side by side.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            previous_cwd = Path.cwd()
+            previous_config = os.environ.get("DOKEY_CONFIG_DIR")
+            os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
+            os.chdir(tmp_path)
+            try:
+                app = self._app(tmp_path).run()
+                self.assertIn("import_open", {w.key for w in app.sidebar.button})
+                self.assertNotIn("ing_mode", {w.key for w in app.radio})
+
+                app.button(key="import_open").click().run()
+                self.assertFalse(app.exception)
+                self.assertIn("ing_mode", {w.key for w in app.radio})
+                self.assertNotIn("ing_mode", {w.key for w in app.sidebar.radio})
+                self.assertNotIn("auto_name", {w.key for w in app.sidebar.text_input})
+                self.assertIn("import_close", {w.key for w in app.sidebar.button})
+            finally:
+                os.chdir(previous_cwd)
+                if previous_config is None:
+                    os.environ.pop("DOKEY_CONFIG_DIR", None)
+                else:
+                    os.environ["DOKEY_CONFIG_DIR"] = previous_config
 
     def test_auto_is_the_default_mode_with_offset_override(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -828,7 +866,7 @@ class UiIngestPanelTests(unittest.TestCase):
             os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
             os.chdir(tmp_path)
             try:
-                app = self._app(tmp_path).run()
+                app = self._importing(tmp_path)
                 self.assertFalse(app.exception)
                 # Auto is the default; no manual page-offset spinner is shown.
                 self.assertEqual(app.radio(key="ing_mode").value, "auto")
@@ -853,7 +891,7 @@ class UiIngestPanelTests(unittest.TestCase):
             os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
             os.chdir(tmp_path)
             try:
-                app = self._app(tmp_path).run()
+                app = self._importing(tmp_path)
                 self.assertFalse(app.exception)
                 self.assertIn(
                     "auto_convert", {widget.key for widget in app.selectbox}
@@ -907,7 +945,7 @@ class UiIngestPanelTests(unittest.TestCase):
                 with unittest.mock.patch(
                     "dokey.pickers.choose_file", return_value=None
                 ) as choose:
-                    app = self._app(tmp_path).run()
+                    app = self._importing(tmp_path)
                     app.button(key="ing_choose_file").click().run()
                 self.assertFalse(app.exception)
                 choose.assert_called_once()
@@ -953,7 +991,7 @@ class UiIngestPanelTests(unittest.TestCase):
             os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
             os.chdir(tmp_path)
             try:
-                app = self._app(tmp_path).run()
+                app = self._importing(tmp_path)
                 app.radio(key="ing_mode").set_value("manual").run()
                 self.assertFalse(app.exception)
                 self.assertEqual(app.radio(key="ing_toc_source").value, "outline")
@@ -1044,12 +1082,10 @@ class UiRerunCostTests(unittest.TestCase):
 class UiPreviewPlacementTests(unittest.TestCase):
     """A table of contents is the widest thing the app shows.
 
-    The forms that stage a document live in the sidebar, which is the narrowest
-    column on the page. So both the offer to preview and the table itself
-    belong to the main pane -- the same space the library listing occupies by
-    default -- and neither may be drawn anywhere else. The file uploader cannot
-    be driven from ``AppTest``, so this is checked where the placement actually
-    lives: the call site.
+    It is drawn in the main pane, once, directly under the form that decides
+    what it contains -- never in the sidebar, which is 300 px wide and reserved
+    for navigation. The file uploader cannot be driven from ``AppTest``, so
+    this is checked where the placement actually lives: the call site.
     """
 
     def _module(self) -> ast.Module:
@@ -1083,7 +1119,12 @@ class UiPreviewPlacementTests(unittest.TestCase):
         rendered = [node for node in top_level if "preview_pane" in self._calls(node)]
         self.assertEqual(len(rendered), 1)
 
-    def test_the_preview_takes_the_pane_the_library_listing_defaults_to(self) -> None:
+    def test_the_preview_shares_the_switch_that_picks_what_the_pane_shows(self) -> None:
+        """One statement decides between importing, searching, and browsing.
+
+        The preview belongs to the importing arm of it, so it cannot end up
+        drawn beside a search result or under the library listing.
+        """
         tree = self._module()
         listing = [
             node
@@ -1092,7 +1133,9 @@ class UiPreviewPlacementTests(unittest.TestCase):
             and "browse_sections" in self._calls(node)
         ]
         self.assertEqual(len(listing), 1)
-        self.assertIn("preview_pane", self._calls(listing[0]))
+        calls = self._calls(listing[0])
+        self.assertIn("preview_pane", calls)
+        self.assertIn("import_view", calls)
 
     def test_the_sidebar_does_not_render_the_preview(self) -> None:
         tree = self._module()

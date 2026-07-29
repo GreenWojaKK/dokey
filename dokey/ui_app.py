@@ -395,34 +395,68 @@ def backend_panel() -> None:
         st.caption(t("backend_caption"))
 
 
-def ingest_panel() -> None:
-    clear_preview()  # each run re-earns the offer made below
-    with st.expander(
-        t("ingest_book"), expanded=False, icon=":material/add:"
+def import_open() -> bool:
+    return bool(st.session_state.get("_import_open"))
+
+
+def import_control(lake: Path | None) -> None:
+    """Open and close the import view. The form itself is not in here.
+
+    Adding a book is a dozen controls -- a file, a name, a split depth, a
+    language, and the overrides that correct a wrong guess. Stacked in the
+    sidebar they became a column of labels 300 px wide and a screen tall, read
+    top to bottom with no way to see how they relate. The sidebar keeps the
+    one control that is genuinely navigation: the way in.
+    """
+    if lake is None:
+        return  # nothing to switch between: the view is already the whole page
+    if import_open():
+        if st.button(
+            t("close_import"),
+            key="import_close",
+            icon=":material/close:",
+            use_container_width=True,
+        ):
+            st.session_state["_import_open"] = False
+            st.rerun()
+        return
+    if st.button(
+        t("ingest_book"),
+        key="import_open",
+        type="primary",
+        icon=":material/add:",
+        use_container_width=True,
     ):
-        st.caption(t("adding_to_project", project=_active_project_root().name))
-        upload = _document_picker()
-        # HWP and Markdown are flow formats with no pages, so the PDF page-offset
-        # / overlap / TOC controls do not apply; both take the heading-unitized
-        # path. Markdown needs no converter at all -- it is ingested as-is.
-        if upload is not None and hwplib.is_hwp(Path(upload.name)):
-            _hwp_ingest_form(upload)
-            return
-        if upload is not None and mdunit.is_markdown(Path(upload.name)):
-            _md_ingest_form(upload)
-            return
-        mode = st.radio(
-            t("ingest_mode"),
-            ["auto", "manual"],
-            format_func=lambda value: t(f"ingest_mode_{value}"),
-            key="ing_mode",
-            horizontal=True,
-            help=t("ingest_mode_help"),
-        )
-        if mode == "auto":
-            _auto_ingest_form(upload)
-        else:
-            _manual_ingest_form(upload)
+        st.session_state["_import_open"] = True
+        st.rerun()
+
+
+def import_view() -> None:
+    """The whole add-a-book flow, in the pane with room to lay it out."""
+    st.subheader(t("ingest_book"))
+    st.caption(t("adding_to_project", project=_active_project_root().name))
+    upload = _document_picker()
+    # HWP and Markdown are flow formats with no pages, so the PDF page-offset
+    # / overlap / TOC controls do not apply; both take the heading-unitized
+    # path. Markdown needs no converter at all -- it is ingested as-is.
+    if upload is not None and hwplib.is_hwp(Path(upload.name)):
+        _hwp_ingest_form(upload)
+        return
+    if upload is not None and mdunit.is_markdown(Path(upload.name)):
+        _md_ingest_form(upload)
+        return
+    mode = st.radio(
+        t("ingest_mode"),
+        ["auto", "manual"],
+        format_func=lambda value: t(f"ingest_mode_{value}"),
+        key="ing_mode",
+        horizontal=True,
+        help=t("ingest_mode_help"),
+    )
+    if mode == "auto":
+        _auto_ingest_form(upload)
+    else:
+        _manual_ingest_form(upload)
 
 
 def _document_picker():
@@ -442,7 +476,7 @@ def _document_picker():
         st.warning(t("document_missing"))
 
     label = t("change_document") if selected_path else t("choose_document")
-    columns = st.columns([3, 1])
+    columns = st.columns([2, 1, 3])
     if columns[0].button(
         label,
         key="ing_choose_file",
@@ -484,15 +518,11 @@ def _hwp_ingest_form(upload) -> None:
         st.warning(t("hwp_offline"))
     else:
         st.caption(t("hwp_online", cmd=converter.display()))
-    lake_name = st.text_input(
+    name_column, _spacer = st.columns([2, 3])
+    lake_name = name_column.text_input(
         t("library_name_optional"), value="", key="hwp_name"
     )
-    if st.button(
-        t("run_ingest"),
-        key="hwp_run",
-        disabled=converter is None,
-        type="primary",
-    ):
+    if _run_button("hwp_run", disabled=converter is None):
         run_hwp_ingest_ui(upload, lake_name)
 
 
@@ -562,6 +592,18 @@ def _language_profile_input(key: str) -> str:
 def _write_items_input(key: str) -> bool:
     return st.checkbox(
         t("write_items"), value=True, key=key, help=t("write_items_help")
+    )
+
+
+def _run_button(key: str, *, disabled: bool = False) -> bool:
+    """The one button that writes something, kept off the full page width."""
+    return st.columns([1, 4])[0].button(
+        t("run_ingest"),
+        key=key,
+        disabled=disabled,
+        type="primary",
+        icon=":material/library_add:",
+        use_container_width=True,
     )
 
 
@@ -750,20 +792,27 @@ def _md_ingest_form(upload) -> None:
     dokey keeps layout reconstruction upstream and just unitizes + indexes.
     """
     st.caption(t("md_input_caption"))
-    lake_name = st.text_input(
-        t("library_name_optional"), value="", key="md_name"
-    )
-    depth = _section_depth_input("md_depth")
-    with st.expander(t("advanced_overrides"), expanded=False):
-        profile = _language_profile_input("md_profile")
-        blocks_upload = st.file_uploader(
-            t("source_blocks"), type=["json"], key="md_blocks",
-            help=t("source_blocks_help"),
+    essentials = st.columns(3)
+    with essentials[0]:
+        lake_name = st.text_input(
+            t("library_name_optional"), value="", key="md_name"
         )
-        write_items = _write_items_input("md_items")
+    with essentials[1]:
+        depth = _section_depth_input("md_depth")
+    with essentials[2]:
+        profile = _language_profile_input("md_profile")
+    with st.expander(t("advanced_overrides"), expanded=False):
+        overrides = st.columns(2)
+        with overrides[0]:
+            blocks_upload = st.file_uploader(
+                t("source_blocks"), type=["json"], key="md_blocks",
+                help=t("source_blocks_help"),
+            )
+        with overrides[1]:
+            write_items = _write_items_input("md_items")
     if upload is not None:
         _offer_preview("md", upload, depth, profile, blocks_upload)
-    if st.button(t("run_ingest"), key="md_run", type="primary"):
+    if _run_button("md_run"):
         run_md_ingest_ui(upload, lake_name, depth, profile, blocks_upload, write_items)
 
 
@@ -843,48 +892,57 @@ def converter_status() -> bool:
 
 
 def _auto_ingest_form(pdf_upload) -> None:
-    """Zero-config ingest: upload and add. Overrides are tucked away and only
-    needed to correct a wrong guess."""
+    """Zero-config ingest: choose a book and add it.
+
+    Three questions worth asking on the way in -- what to call it, how finely
+    to cut it, what language it is written in -- stand side by side, and the
+    overrides that only correct a wrong guess stay folded away behind them.
+    """
     has_converter = converter_status()
-    with st.expander(t("advanced_overrides"), expanded=False):
-        read_method = st.selectbox(
-            t("read_method"),
-            ["auto", "never", "always"],
-            format_func=lambda value: t(f"read_method_{value}"),
-            key="auto_convert",
-            help=t("read_method_help"),
-            disabled=not has_converter,
+    essentials = st.columns(3)
+    with essentials[0]:
+        lake_name = st.text_input(
+            t("library_name_optional"), value="", key="auto_name"
         )
-        offset_text = st.text_input(
-            t("page_offset_auto"), value="", key="auto_offset",
-            help=t("page_offset_auto_help"),
-        )
-        overlap_choice = st.selectbox(
-            t("section_overlap"),
-            ["auto", "0", "1", "2"],
-            format_func=lambda value: t("overlap_auto") if value == "auto" else value,
-            key="auto_overlap",
-            help=t("section_overlap_auto_help"),
-        )
-        toc_page_text = st.text_input(
-            t("toc_page_pin"), value="", key="auto_tocpage",
-            help=t("toc_page_pin_help"),
-        )
+    with essentials[1]:
         depth = _section_depth_input("auto_depth")
+    with essentials[2]:
         profile = _language_profile_input("auto_profile")
+    switches = st.columns(3)
+    with switches[0]:
+        recover = st.checkbox(t("recover_printed"), value=True, key="auto_recover")
+    with switches[1]:
         write_items = _write_items_input("auto_items")
-    recover = st.checkbox(t("recover_printed"), value=True, key="auto_recover")
-    lake_name = st.text_input(
-        t("library_name_optional"), value="", key="auto_name"
-    )
+    with st.expander(t("advanced_overrides"), expanded=False):
+        overrides = st.columns(2)
+        with overrides[0]:
+            read_method = st.selectbox(
+                t("read_method"),
+                ["auto", "never", "always"],
+                format_func=lambda value: t(f"read_method_{value}"),
+                key="auto_convert",
+                help=t("read_method_help"),
+                disabled=not has_converter,
+            )
+            offset_text = st.text_input(
+                t("page_offset_auto"), value="", key="auto_offset",
+                help=t("page_offset_auto_help"),
+            )
+        with overrides[1]:
+            overlap_choice = st.selectbox(
+                t("section_overlap"),
+                ["auto", "0", "1", "2"],
+                format_func=lambda value: t("overlap_auto") if value == "auto" else value,
+                key="auto_overlap",
+                help=t("section_overlap_auto_help"),
+            )
+            toc_page_text = st.text_input(
+                t("toc_page_pin"), value="", key="auto_tocpage",
+                help=t("toc_page_pin_help"),
+            )
     if pdf_upload is not None:
         _offer_preview("pdf", pdf_upload, depth, profile)
-    if st.button(
-        t("run_ingest"),
-        key="auto_run",
-        disabled=pdf_upload is None,
-        type="primary",
-    ):
+    if _run_button("auto_run", disabled=pdf_upload is None):
         page_offset, ok = _parse_optional_int(offset_text)
         if not ok:
             st.error(t("invalid_number"))
@@ -913,38 +971,40 @@ def _manual_ingest_form(pdf_upload) -> None:
     )
     toc_upload, toc_format = None, "auto"
     if toc_source == "file":
-        toc_upload = st.file_uploader(
-            t("toc_file_label"), type=["csv", "txt"], key="ing_toc"
+        given = st.columns(2)
+        with given[0]:
+            toc_upload = st.file_uploader(
+                t("toc_file_label"), type=["csv", "txt"], key="ing_toc"
+            )
+        with given[1]:
+            toc_format = st.selectbox(
+                t("toc_format"),
+                ["auto", "csv", "text"],
+                format_func=lambda value: t(f"format_{value}"),
+                key="ing_toc_fmt",
+            )
+    essentials = st.columns(3)
+    with essentials[0]:
+        lake_name = st.text_input(
+            t("library_name_optional"), value="", key="ing_name"
         )
-        toc_format = st.selectbox(
-            t("toc_format"),
-            ["auto", "csv", "text"],
-            format_func=lambda value: t(f"format_{value}"),
-            key="ing_toc_fmt",
+    with essentials[1]:
+        page_offset = st.number_input(
+            t("page_offset"), value=0, step=1, key="ing_offset"
         )
-    page_offset = st.number_input(
-        t("page_offset"), value=0, step=1, key="ing_offset"
-    )
-    section_overlap = st.number_input(
-        t("section_overlap"),
-        value=1,
-        min_value=0,
-        step=1,
-        key="ing_overlap",
-        help=t("section_overlap_help"),
-    )
+    with essentials[2]:
+        section_overlap = st.number_input(
+            t("section_overlap"),
+            value=1,
+            min_value=0,
+            step=1,
+            key="ing_overlap",
+            help=t("section_overlap_help"),
+        )
     recover = st.checkbox(
         t("recover_printed"), value=True, key="ing_recover"
     )
-    lake_name = st.text_input(
-        t("library_name_optional"), value="", key="ing_name"
-    )
-    if st.button(
-        t("run_ingest"),
-        key="ing_run",
-        disabled=pdf_upload is None,
-        type="primary",
-    ):
+    if _run_button("ing_run", disabled=pdf_upload is None):
         run_ingest_ui(
             pdf_upload, toc_source, toc_upload, toc_format,
             int(page_offset), int(section_overlap), recover, lake_name,
@@ -1155,7 +1215,7 @@ def sidebar() -> tuple[Path | None, int]:
     else:
         st.title("Dokey")
     lake = pick_lake(lake_from_argv())
-    ingest_panel()
+    import_control(lake)
     backend_panel()
     with st.expander(
         t("appearance"), expanded=False, icon=":material/translate:"
@@ -1295,31 +1355,42 @@ st.markdown(_MARK_CSS + _PROJECT_CSS, unsafe_allow_html=True)
 with st.sidebar:
     active_lake, max_results = sidebar()
 
+# A project with nothing in it has one useful thing to offer, so it offers it.
+importing = import_open() or active_lake is None
+clear_preview()  # each run re-earns the offer the import view makes below
+
 if active_lake is None:
     active_project = _active_project_root()
     st.subheader(active_project.name)
     st.caption(str(active_project))
     st.info(t("project_empty_main"))
-    st.stop()
+else:
+    st.subheader(active_lake.name)
+    try:
+        active_relative = active_lake.relative_to(_active_project_root()).as_posix()
+    except ValueError:
+        active_relative = str(active_lake)
+    st.caption(
+        t("project_breadcrumb", project=_active_project_root().name, path=active_relative)
+    )
 
-st.subheader(active_lake.name)
-try:
-    active_relative = active_lake.relative_to(_active_project_root()).as_posix()
-except ValueError:
-    active_relative = str(active_lake)
-st.caption(t("project_breadcrumb", project=_active_project_root().name, path=active_relative))
-query = st.text_input(
-    t("search"),
-    key="query",
-    placeholder=t("search_placeholder"),
+query = (
+    ""
+    if importing
+    else st.text_input(t("search"), key="query", placeholder=t("search_placeholder"))
 )
 
-if query.strip():
+if importing:
+    # The form, and directly under it the table that says what the form would
+    # do. Question and answer in one column, both as wide as the page.
+    import_view()
+    preview_pane()
+elif query.strip():
     results = searchlib.search(active_lake, query, limit=max_results)
     if not results:
         st.info(t("no_matches"))
     for hit in results:
         result_card(active_lake, hit)
-elif not preview_pane():
-    # Nothing being looked at and nothing being searched: the library it is.
+else:
+    # Nothing being added and nothing being searched: the library it is.
     browse_sections(active_lake)

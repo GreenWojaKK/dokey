@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -41,14 +42,21 @@ LEGACY_SUFFIXES = frozenset({".xls"})
 _MAIN_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 # The OLE2 container magic every legacy Office file opens with.
 _OLE2_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+# How often a column must be occupied for a region to read as a table. Below
+# this a column is something a form happened to put a value in, not a column.
+COLUMN_STEADY = 0.7
+_RUN_OF_SPACES = re.compile(r"[ \t 　]{2,}")
 
 
 @dataclass
 class SheetReport:
     sheets: int = 0
     named: int = 0
+    regions: int = 0
     tables: int = 0
+    blocks: int = 0
     rows: int = 0
+    columns_dropped: int = 0
     empty_sheets: int = 0
     notes: list[str] = field(default_factory=list)
 
@@ -59,17 +67,27 @@ class SheetReport:
             else "no sheet names in the file; numbered instead"
         )
         empty = f", {self.empty_sheets} empty" if self.empty_sheets else ""
+        dropped = (
+            f", {self.columns_dropped} empty column(s) dropped"
+            if self.columns_dropped
+            else ""
+        )
         return (
             f"{self.sheets} sheet(s) ({named}); "
-            f"{self.tables} table(s), {self.rows} row(s){empty}"
+            f"{self.regions} region(s) -- {self.tables} table(s), "
+            f"{self.blocks} field block(s) -- over {self.rows} row(s)"
+            f"{dropped}{empty}"
         )
 
     def as_dict(self) -> dict:
         return {
             "sheets": self.sheets,
             "sheets_named": self.named,
+            "regions": self.regions,
             "tables": self.tables,
+            "field_blocks": self.blocks,
             "rows": self.rows,
+            "columns_dropped": self.columns_dropped,
             "empty_sheets": self.empty_sheets,
             "notes": list(self.notes),
         }
@@ -149,20 +167,100 @@ def sheet_names(source: Path | BinaryIO) -> list[str]:
     ]
 
 
-def _cell_text(cell: dict) -> str:
-    """One cell as text, kept on one line so a table row stays a row."""
-    text = str(cell.get("text") or "")
-    return text.replace("|", "\\|").replace("\n", " ").strip()
+def _cell_text(cell) -> str:
+    """One cell as text, kept on one line so a table row stays a row.
+
+    Runs of spaces are collapsed. A spreadsheet spaces a label out to fill a
+    merged cell -- a title set as ``見  積  書``, a field label as ``상   호`` --
+    and that padding is layout, not content: left in, it is what stops the
+    label being found by the word it is.
+    """
+    text = cell.get("text") if isinstance(cell, dict) else cell
+    text = str(text or "").replace("\n", " ").replace("|", "\\|")
+    return _RUN_OF_SPACES.sub(" ", text).strip()
 
 
-def markdown_table(grid: list[list[dict]]) -> str:
-    """A grid of cells as a Markdown table.
+def _as_rows(grid) -> list[list[str]]:
+    """A converter's grid, or plain strings, as rows of cell text."""
+    return [[_cell_text(cell) for cell in row] for row in grid if row]
+
+
+def _occupied(rows: list[list[str]]) -> list[set[int]]:
+    return [{index for index, cell in enumerate(row) if cell} for row in rows]
+
+
+def trim(rows: list[list[str]]) -> tuple[list[list[str]], int]:
+    """Drop columns nothing occupies, and blank rows at either end.
+
+    A form's grid is mostly empty: the columns exist because a cell was merged
+    across them, not because anything was put there. Kept, they turn every row
+    into a run of empty pipes that a reader has to look past and a search
+    snippet has no room for.
+    """
+    if not rows:
+        return [], 0
+    width = max(len(row) for row in rows)
+    filled = set().union(*_occupied(rows)) if rows else set()
+    keep = [index for index in range(width) if index in filled]
+    dropped = width - len(keep)
+    squeezed = [[row[index] if index < len(row) else "" for index in keep] for row in rows]
+    while squeezed and not any(squeezed[0]):
+        squeezed.pop(0)
+    while squeezed and not any(squeezed[-1]):
+        squeezed.pop()
+    return squeezed, dropped
+
+
+def split_regions(rows: list[list[str]]) -> list[list[list[str]]]:
+    """Runs of rows separated by blank ones: a sheet's own paragraphing.
+
+    A blank row is the one structural mark a spreadsheet has. A quotation form
+    uses it to part the title from the addressee block, that from the totals,
+    and those from the line items -- four things a reader sees as four, and one
+    grid sees as one.
+    """
+    regions: list[list[list[str]]] = []
+    current: list[list[str]] = []
+    for row in rows:
+        if any(row):
+            current.append(row)
+        elif current:
+            regions.append(current)
+            current = []
+    if current:
+        regions.append(current)
+    return regions
+
+
+def is_table(rows: list[list[str]]) -> bool:
+    """Whether a region is a table rather than a block of labelled fields.
+
+    The test is column alignment, not cell count: a table fills the same
+    columns row after row, while a form scatters a label here and a value
+    there. Measured on a real quotation form, the addressee block filled one
+    column consistently and the rest a third of the time; its line-item table
+    filled four columns in nine rows out of ten.
+    """
+    if len(rows) < 2:
+        return False
+    occupied = _occupied(rows)
+    width = max((len(row) for row in rows), default=0)
+    steady = sum(
+        1
+        for column in range(width)
+        if sum(column in row for row in occupied) >= len(rows) * COLUMN_STEADY
+    )
+    return steady >= 2
+
+
+def markdown_table(grid) -> str:
+    """A grid of cells as a Markdown table, its first row the header.
 
     Rendered here rather than taken from the converter's Markdown, because the
     block stream is the contract: it says which sheet each table belongs to,
     and the render does not.
     """
-    rows = [[_cell_text(cell) for cell in row] for row in grid if row]
+    rows = _as_rows(grid)
     if not rows:
         return ""
     width = max(len(row) for row in rows)
@@ -176,8 +274,51 @@ def markdown_table(grid: list[list[dict]]) -> str:
     return "\n".join(lines)
 
 
+def _field_lines(rows: list[list[str]]) -> str:
+    """A block of fields as lines, since it is not a table.
+
+    The cells of a row are joined, in the order they sit, and nothing more is
+    claimed about them. Reading two cells as a label and its value was tried
+    and is wrong: a form often runs two field groups side by side, so the left
+    cell of a row is one group's *value* and the right cell is the other
+    group's *label*, and a colon between them asserts a pair that is not
+    there. A separator says only what is true -- these were on one row.
+    """
+    lines = []
+    for row in rows:
+        cells = [cell for cell in row if cell]
+        if cells:
+            lines.append(" · ".join(cells))
+    return "\n".join(lines)
+
+
+def render_sheet(regions: list[list[list[str]]], report: "SheetReport") -> str:
+    """One sheet's regions, each rendered as what it turned out to be."""
+    parts = []
+    for region in regions:
+        rows, dropped = trim(_as_rows(region))
+        report.columns_dropped += dropped
+        if not rows:
+            continue
+        report.regions += 1
+        report.rows += len(rows)
+        if is_table(rows):
+            report.tables += 1
+            parts.append(markdown_table(rows))
+        else:
+            report.blocks += 1
+            parts.append(_field_lines(rows))
+    return "\n\n".join(part for part in parts if part)
+
+
 def _sheet_bodies(document: dict, report: SheetReport) -> dict[int, list[str]]:
-    """Each sheet's content, in the order the converter emitted it."""
+    """Each sheet's content, in the order the converter emitted it.
+
+    The converter already parts a sheet into regions -- it emits one table per
+    run of occupied rows -- so each of those is offered to the same renderer
+    the legacy path uses, and a one-cell "table" holding a title comes out as
+    the line it is rather than a table with a header rule under it.
+    """
     bodies: dict[int, list[str]] = {}
     for table in document.get("tables") or []:
         prov = (table.get("prov") or [{}])[0]
@@ -185,11 +326,9 @@ def _sheet_bodies(document: dict, report: SheetReport) -> dict[int, list[str]]:
         if page is None:
             continue
         grid = (table.get("data") or {}).get("grid") or []
-        rendered = markdown_table(grid)
+        rendered = render_sheet([grid], report)
         if not rendered:
             continue
-        report.tables += 1
-        report.rows += len(grid)
         bodies.setdefault(int(page), []).append(rendered)
     for text in document.get("texts") or []:
         prov = (text.get("prov") or [{}])[0]
@@ -245,31 +384,25 @@ def read_xls(path: Path) -> tuple[list[Section], SheetReport]:
     report = SheetReport()
     sections: list[Section] = []
     for index, sheet in enumerate(book.sheets(), start=1):
-        grid = []
-        for row_index in range(sheet.nrows):
-            row = [
-                {
-                    "text": display(
-                        sheet.cell_type(row_index, col),
-                        sheet.cell_value(row_index, col),
-                        book.datemode,
-                    )
-                }
+        # The blank rows are kept at this stage: they are where the sheet
+        # parts one region from the next, which is the only structure it has.
+        grid = [
+            [
+                display(
+                    sheet.cell_type(row_index, col),
+                    sheet.cell_value(row_index, col),
+                    book.datemode,
+                )
                 for col in range(sheet.ncols)
             ]
-            # A form sheet uses blank rows as spacing; an empty table row
-            # carries nothing a search could hit.
-            if any(cell["text"].strip() for cell in row):
-                grid.append(row)
-        rendered = markdown_table(grid)
+            for row_index in range(sheet.nrows)
+        ]
+        rendered = render_sheet(split_regions(_as_rows(grid)), report)
         name = (sheet.name or "").strip()
         if name:
             report.named += 1
         title = name or f"Sheet {index}"
-        if rendered:
-            report.tables += 1
-            report.rows += len(grid)
-        else:
+        if not rendered:
             report.empty_sheets += 1
         sections.append(
             Section(order=index, level=1, title=title, parent=title, body=rendered)

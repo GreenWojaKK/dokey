@@ -2711,6 +2711,82 @@ class SpreadsheetTests(unittest.TestCase):
         # A short row is padded, not left ragged.
         self.assertEqual(rows[-1], "| 1 |  |")
 
+    def test_padding_inside_a_cell_is_layout_and_is_collapsed(self) -> None:
+        from dokey import sheets
+
+        # A label spaced out to fill a merged cell is not a label containing
+        # spaces; left in, it is what stops the word being found.
+        self.assertEqual(sheets._cell_text({"text": "見     積     書"}), "見 積 書")
+        self.assertEqual(sheets._cell_text("상   호"), "상 호")
+
+    def test_a_sheet_is_parted_at_its_blank_rows(self) -> None:
+        from dokey import sheets
+
+        # A blank row is the one structural mark a spreadsheet has, and a form
+        # uses it to part the title from the fields from the items.
+        regions = sheets.split_regions(
+            [["제목"], [""], ["항목", "수량"], ["볼트", "3"], [""], [""], ["끝"]]
+        )
+        self.assertEqual(len(regions), 3)
+        self.assertEqual([len(region) for region in regions], [1, 2, 1])
+
+    def test_columns_nothing_occupies_are_dropped(self) -> None:
+        from dokey import sheets
+
+        # A merged cell leaves the columns it spanned in the grid and empty.
+        rows, dropped = sheets.trim(
+            [["제목", "", "", ""], ["", "", "", ""], ["항목", "", "수량", ""]]
+        )
+        self.assertEqual(dropped, 2)
+        self.assertEqual(rows, [["제목", ""], ["", ""], ["항목", "수량"]])
+
+    def test_a_table_is_told_from_a_field_block_by_column_alignment(self) -> None:
+        from dokey import sheets
+
+        # A table fills the same columns row after row.
+        self.assertTrue(
+            sheets.is_table([["항목", "수량"], ["볼트", "3"], ["너트", "5"]])
+        )
+        # A form scatters a label here and a value there, so no two columns
+        # are steady -- and one row is never a table.
+        self.assertFalse(
+            sheets.is_table([["제목", "", ""], ["", "", "등록번호"], ["수신처", "", ""]])
+        )
+        self.assertFalse(sheets.is_table([["항목", "수량"]]))
+
+    def test_a_form_sheet_comes_out_as_its_parts_not_as_one_table(self) -> None:
+        from dokey import sheets
+
+        # The shape a real form has: a title, a block of scattered fields, and
+        # a table -- which as one grid put the title in the header row and a
+        # rule under it, and padded every row with the empty columns a merge
+        # left behind.
+        grid = [
+            ["표제", "", "", ""],
+            ["", "", "", ""],
+            ["수신처", "", "", "담당"],
+            ["", "", "", "연락처"],
+            ["", "", "", ""],
+            ["번호", "품목", "수량", "금액"],
+            ["1", "볼트", "3", "300"],
+            ["2", "너트", "5", "500"],
+        ]
+        report = sheets.SheetReport()
+        body = sheets.render_sheet(sheets.split_regions(grid), report)
+
+        self.assertEqual(report.regions, 3)
+        self.assertEqual(report.tables, 1)
+        self.assertEqual(report.blocks, 2)
+        # The title is a line, not a one-column table with a header rule.
+        self.assertTrue(body.startswith("표제\n"))
+        self.assertNotIn("| 표제 |", body)
+        # The fields are joined as they sit, claiming nothing about which cell
+        # labels which: side-by-side field groups make that pairing false.
+        self.assertIn("수신처 · 담당", body)
+        # Only the table is a table, and its own first row is the header.
+        self.assertIn("| 번호 | 품목 | 수량 | 금액 |", body)
+        self.assertIn("| 1 | 볼트 | 3 | 300 |", body)
+
     def test_the_workbook_names_its_own_sheets(self) -> None:
         from dokey import sheets
 

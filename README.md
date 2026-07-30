@@ -476,6 +476,30 @@ stand-in. Tables are rendered from the block stream rather than taken from the
 converter's Markdown, because only the block stream says which sheet a table
 came from.
 
+**A sheet is not one table, though.** A form sheet holds several things at once
+— a title, a block of fields, a totals line, the line items — and read as one
+grid they come out as a single Markdown table whose header row is the
+document's own title, with a header rule under it and every row padded with the
+empty columns a merged cell left behind. So a sheet is parted at its **blank
+rows**, which are the one structural mark a spreadsheet has, and each region is
+rendered as what it turns out to be:
+
+- **A table**, if the same columns are occupied row after row. That test is
+  alignment, not cell count: on a measured form the field block filled one
+  column consistently and the rest a third of the time, while its line-item
+  table filled four columns in nine rows out of ten. A table's own first row is
+  its header.
+- **A block of fields** otherwise, one line per row, cells joined as they sit.
+  Reading two cells as a label and its value was tried and is wrong: a form
+  often runs two field groups side by side, so the left cell of a row is one
+  group's *value* and the right cell is the other group's *label*. A separator
+  claims only what is true — these were on one row.
+
+Columns nothing occupies are dropped, and padding inside a cell is collapsed: a
+label spaced out to fill a merged cell (`상   호`) is not a label containing
+spaces, and left in, it is what stops the word being found. What each region
+turned out to be is counted in the ingest report.
+
 The sheet's *name* is the one thing the conversion drops, and it is the only
 title a sheet has. dokey reads it back out of the workbook itself — an `.xlsx`
 is a zip whose `xl/workbook.xml` lists the sheets in order, and the standard

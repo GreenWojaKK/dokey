@@ -133,10 +133,10 @@ _PROJECT_CSS = f"""
 </style>
 """
 
+# The logo is the browser tab's icon and nothing else. A wordmark at the top of
+# the sidebar spends the most valuable rows on the page telling the reader which
+# application they just opened; the tab already says that.
 _LOGO_PATH = Path(__file__).resolve().parent / "assets" / "logo.png"
-# The logo is a 512px square, so a column would scale it to whatever width the
-# sidebar happens to have been dragged to. It is a mark, not an illustration.
-_LOGO_WIDTH = 34
 # Streamlit opens the sidebar at 300px and remembers whatever it is dragged to.
 # Navigation needs less than that; the drag handle still decides the rest.
 _SIDEBAR_WIDTH = 240
@@ -1355,16 +1355,8 @@ def pick_lake(cli_lake: Path | None) -> Path | None:
 
 
 def sidebar() -> tuple[Path | None, int]:
-    if _LOGO_PATH.exists():
-        logo_col, title_col = st.columns(
-            [1, 4], vertical_alignment="center"
-        )
-        # A pixel width, not a share of the column: the sidebar is draggable
-        # and a mark that grows and shrinks with it reads as a mistake.
-        logo_col.image(str(_LOGO_PATH), width=_LOGO_WIDTH)
-        title_col.title("Dokey")
-    else:
-        st.title("Dokey")
+    # Straight into the projects: no logo, no wordmark. The reader knows what
+    # they opened, and the top of a navigation column is worth more than a badge.
     lake = pick_lake(lake_from_argv())
     import_control(lake)
     backend_panel()

@@ -1168,32 +1168,24 @@ class UiSidebarChromeTests(unittest.TestCase):
 
         self._in_project(check)
 
-    def test_the_logo_is_given_a_pixel_width_not_a_share_of_the_column(self) -> None:
-        """The sidebar is draggable; a mark that resizes with it reads as a bug."""
-        tree = self._module()
-        widths = [
-            node.value
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Assign)
-            and any(
-                isinstance(target, ast.Name) and target.id == "_LOGO_WIDTH"
-                for target in node.targets
-            )
-        ]
-        self.assertEqual(len(widths), 1)
-        self.assertIsInstance(widths[0], ast.Constant)
-        self.assertIsInstance(widths[0].value, int)
+    def test_the_sidebar_opens_on_the_projects_not_on_a_wordmark(self) -> None:
+        """The top rows of a navigation column are the ones worth spending.
 
-        drawn = [
-            call
-            for call in ast.walk(tree)
-            if isinstance(call, ast.Call)
-            and isinstance(call.func, ast.Attribute)
-            and call.func.attr == "image"
-        ]
-        self.assertTrue(drawn)
-        for call in drawn:
-            self.assertIn("width", [keyword.arg for keyword in call.keywords])
+        The browser tab carries the name and the icon; repeating them inside the
+        app buys nothing and pushes the tree down.
+        """
+        def check(tmp_path: Path) -> None:
+            app = self._app(tmp_path).run()
+            self.assertFalse(app.exception)
+            self.assertEqual(list(app.sidebar.image), [])
+            headings = [element.value for element in app.sidebar.title]
+            self.assertEqual(headings, [])
+            markdown = [element.value for element in app.sidebar.markdown]
+            self.assertFalse(
+                [line for line in markdown if "Dokey" in line], markdown
+            )
+
+        self._in_project(check)
 
     def test_the_sidebar_opens_narrower_than_streamlit_would_open_it(self) -> None:
         """A pixel width is only the starting point; dragging still decides.

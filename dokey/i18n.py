@@ -68,6 +68,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "No layout converter found — reading a workbook's tables needs one. "
             "`pip install docling` and dokey runs it from here, no setup."
         ),
+        "sheet_native_caption": (
+            "Read directly from the file — cells, merges, charts and images "
+            "with their cell anchors. No converter involved."
+        ),
         "sheet_legacy_caption": (
             "A legacy .xls workbook: read directly, no converter involved."
         ),
@@ -342,6 +346,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "레이아웃 변환기를 찾지 못했습니다 — 워크북의 표를 읽으려면 "
             "필요합니다. `pip install docling`만 하면 별도 설정 없이 dokey가 "
             "여기서 실행합니다."
+        ),
+        "sheet_native_caption": (
+            "파일에서 직접 읽습니다 — 셀·병합·차트·그림을 셀 앵커와 함께. "
+            "변환기는 관여하지 않습니다."
         ),
         "sheet_legacy_caption": (
             "구형 .xls 워크북: 변환기 없이 직접 읽습니다."

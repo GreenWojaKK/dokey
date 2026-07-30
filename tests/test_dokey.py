@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 import unittest.mock
+import zipfile
 from pathlib import Path
 
 from pypdf import PdfReader, PdfWriter
@@ -2811,14 +2812,186 @@ class SpreadsheetTests(unittest.TestCase):
             path.write_bytes(b"not a zip")
             self.assertEqual(sheets.sheet_names(path), [])
 
-    def test_a_legacy_workbook_skips_the_converter(self) -> None:
+    @staticmethod
+    def _mini_xlsx(path: Path, *, with_objects: bool = False) -> Path:
+        """A workbook written part by part, so every claim tested is stated.
+
+        Row 4 is absent (the paragraphing mark); row 5 is a single value on a
+        merge spanning the region (a banner). The header row is text over
+        rows carrying a date (style 1 -> numFmt 14) and numbers, one value a
+        shared string with rich runs and one an inline string.
+        """
+        sheet_extra = '<drawing r:id="rId1"/>' if with_objects else ""
+        parts = {
+            "xl/workbook.xml": (
+                '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                '<sheets><sheet name="점검" sheetId="1" r:id="rId1"/></sheets></workbook>'
+            ),
+            "xl/_rels/workbook.xml.rels": (
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                '<Relationship Id="rId1" Type="w" Target="worksheets/sheet1.xml"/></Relationships>'
+            ),
+            "xl/sharedStrings.xml": (
+                '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+                "<si><t>항목</t></si><si><t>측정일</t></si><si><t>값</t></si>"
+                "<si><r><t>두</t></r><r><t>께</t></r></si>"
+                "<si><t>합계 구간</t></si></sst>"
+            ),
+            "xl/styles.xml": (
+                '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+                '<cellXfs count="2"><xf numFmtId="0"/><xf numFmtId="14"/></cellXfs></styleSheet>'
+            ),
+            "xl/worksheets/sheet1.xml": (
+                '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                "<sheetData>"
+                '<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c>'
+                '<c r="C1" t="s"><v>2</v></c></row>'
+                '<row r="2"><c r="A2" t="s"><v>3</v></c><c r="B2" s="1"><v>45366</v></c>'
+                '<c r="C2"><v>1200000</v></c></row>'
+                '<row r="3"><c r="A3" t="inlineStr"><is><t>압력</t></is></c>'
+                '<c r="B3" s="1"><v>45366</v></c><c r="C3"><v>30.5</v></c></row>'
+                '<row r="5"><c r="A5" t="s"><v>4</v></c></row>'
+                "</sheetData>"
+                '<mergeCells count="1"><mergeCell ref="A5:C5"/></mergeCells>'
+                f"{sheet_extra}</worksheet>"
+            ),
+        }
+        if with_objects:
+            parts.update(
+                {
+                    "xl/worksheets/_rels/sheet1.xml.rels": (
+                        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                        '<Relationship Id="rId1" Type="d" Target="../drawings/drawing1.xml"/>'
+                        "</Relationships>"
+                    ),
+                    "xl/drawings/drawing1.xml": (
+                        '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" '
+                        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+                        'xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" '
+                        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                        "<xdr:oneCellAnchor><xdr:from><xdr:col>4</xdr:col><xdr:row>1</xdr:row></xdr:from>"
+                        '<xdr:graphicFrame><a:graphic><a:graphicData><c:chart r:id="rId2"/>'
+                        "</a:graphicData></a:graphic></xdr:graphicFrame></xdr:oneCellAnchor>"
+                        "<xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:row>9</xdr:row></xdr:from>"
+                        '<xdr:pic><xdr:blipFill><a:blip r:embed="rId1"/></xdr:blipFill></xdr:pic>'
+                        "</xdr:oneCellAnchor>"
+                        "<xdr:twoCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:row>12</xdr:row></xdr:from>"
+                        "<xdr:sp><xdr:txBody><a:p><a:r><a:t>결재란</a:t></a:r></a:p></xdr:txBody></xdr:sp>"
+                        "</xdr:twoCellAnchor></xdr:wsDr>"
+                    ),
+                    "xl/drawings/_rels/drawing1.xml.rels": (
+                        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                        '<Relationship Id="rId1" Type="i" Target="../media/image1.png"/>'
+                        '<Relationship Id="rId2" Type="c" Target="../charts/chart1.xml"/>'
+                        "</Relationships>"
+                    ),
+                    "xl/charts/chart1.xml": (
+                        '<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" '
+                        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+                        "<c:chart><c:title><c:tx><c:rich><a:p><a:r><a:t>두께 추이</a:t></a:r></a:p>"
+                        "</c:rich></c:tx></c:title><c:plotArea><c:barChart><c:ser>"
+                        "<c:val><c:numRef><c:f>'점검'!$C$2:$C$3</c:f></c:numRef></c:val>"
+                        "<c:cat><c:strRef><c:f>'점검'!$A$2:$A$3</c:f></c:strRef></c:cat>"
+                        "</c:ser></c:barChart></c:plotArea></c:chart></c:chartSpace>"
+                    ),
+                }
+            )
+        with zipfile.ZipFile(path, "w") as archive:
+            for name, content in parts.items():
+                archive.writestr(name, content)
+            if with_objects:
+                archive.writestr("xl/media/image1.png", b"\x89PNG\r\n\x1a\nfake")
+        return path
+
+    def test_a_native_workbook_is_read_from_its_own_statements(self) -> None:
         from dokey import sheets
 
-        # The converter lists .xls among its inputs but cannot open one; the
-        # measured file died inside its Excel backend. So the legacy format
-        # never goes there at all.
+        with tempfile.TemporaryDirectory() as tmp:
+            book = self._mini_xlsx(Path(tmp) / "book.xlsx")
+            read = sheets.read_xlsx(book)
+
+        self.assertEqual([s.title for s in read.sections], ["점검"])
+        body = read.sections[0].body
+        # The header stands over a date and numbers: proven by types, and the
+        # region renders as the table it is.
+        self.assertIn("| 항목 | 측정일 | 값 |", body)
+        self.assertIn("| 두께 | 2024-03-15 | 1200000 |", body)
+        self.assertIn("| 압력 | 2024-03-15 | 30.5 |", body)
+        self.assertEqual(read.report.header_types, 1)
+        # The merged single-value row is a banner line, not a table row.
+        self.assertIn("합계 구간", body)
+        self.assertNotIn("| 합계 구간", body)
+        self.assertEqual(read.report.banners, 1)
+
+    def test_every_cell_keeps_its_own_address(self) -> None:
+        from dokey import sheets
+
+        with tempfile.TemporaryDirectory() as tmp:
+            read = sheets.read_xlsx(self._mini_xlsx(Path(tmp) / "book.xlsx"))
+        by_ref = {record["ref"]: record for record in read.cells}
+        # The rendered body folds coordinates away; the cell records keep
+        # them, which is what makes the render checkable.
+        self.assertEqual(by_ref["B2"]["kind"], "date")
+        self.assertEqual(by_ref["B2"]["text"], "2024-03-15")
+        self.assertEqual(by_ref["C3"]["text"], "30.5")
+        self.assertEqual(by_ref["A2"]["text"], "두께")  # shared string, rich runs
+        self.assertEqual(by_ref["A3"]["text"], "압력")  # inline string
+        self.assertEqual(by_ref["A5"]["merge"], "A5:C5")
+        self.assertEqual(
+            [record["rows"] for record in read.regions], [[1, 3], [5, 5]]
+        )
+
+    def test_declared_objects_carry_their_anchors(self) -> None:
+        from dokey import sheets
+
+        with tempfile.TemporaryDirectory() as tmp:
+            read = sheets.read_xlsx(
+                self._mini_xlsx(Path(tmp) / "book.xlsx", with_objects=True)
+            )
+        by_kind = {record["kind"]: record for record in read.objects}
+        # A chart is not an image: the file states which cells it plots, and
+        # that statement is carried, not re-inferred from pixels.
+        chart = by_kind["chart"]
+        self.assertEqual(chart["anchor_ref"], "E2")
+        self.assertEqual(chart["title"], "두께 추이")
+        self.assertEqual(chart["plots"], ["'점검'!$C$2:$C$3", "'점검'!$A$2:$A$3"])
+        # A picture is opaque: bytes and an anchor, content deferred.
+        image = by_kind["image"]
+        self.assertEqual(image["anchor_ref"], "A10")
+        self.assertEqual(image["media"], "artifacts/media/image1.png")
+        self.assertIn("image1.png", read.media)
+        # A text box is content anchored to the grid.
+        self.assertEqual(by_kind["shape"]["text"], "결재란")
+        self.assertEqual(by_kind["shape"]["anchor_ref"], "A13")
+
+    def test_a_native_workbook_builds_a_lake_with_its_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            book = self._mini_xlsx(tmp_path / "점검 워크북.xlsx", with_objects=True)
+            lake = tmp_path / "lake"
+
+            main(["auto", str(book), "--output-dir", str(lake)])
+
+            self.assertTrue((lake / "silver" / "sections.jsonl").exists())
+            cells = (lake / "bronze" / "cells.jsonl").read_text(encoding="utf-8")
+            self.assertIn('"ref": "B2"', cells)
+            objects = (lake / "silver" / "objects.jsonl").read_text(encoding="utf-8")
+            self.assertIn("'점검'!$C$2:$C$3", objects)
+            self.assertTrue((lake / "artifacts" / "media" / "image1.png").exists())
+
+    def test_the_converter_is_only_for_formats_no_reader_opens(self) -> None:
+        from dokey import sheets
+
+        # A workbook carries its own structure; the OOXML zip and the legacy
+        # binary are both read from the file directly. The converter is for
+        # what neither reader opens.
         self.assertFalse(sheets.needs_converter(Path("워크북.xls")))
-        self.assertTrue(sheets.needs_converter(Path("견적서.xlsx")))
+        self.assertFalse(sheets.needs_converter(Path("워크북.xlsx")))
+        self.assertFalse(sheets.needs_converter(Path("워크북.xlsm")))
+        self.assertTrue(sheets.needs_converter(Path("표.ods")))
+        self.assertTrue(sheets.needs_converter(Path("표.xlsb")))
 
     def test_a_corrupt_ole2_container_reads_as_no_names(self) -> None:
         from dokey import sheets

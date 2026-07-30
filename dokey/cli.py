@@ -1620,12 +1620,16 @@ def run_hwp_ingest(args: argparse.Namespace) -> None:
 
 
 def run_sheet_ingest(args: argparse.Namespace) -> None:
-    """Ingest a spreadsheet: convert it, then take one section per sheet.
+    """Ingest a spreadsheet by reading the workbook's own file.
 
-    The conversion is the layout converter's job -- merged cells, formats, the
-    legacy binary formats -- and the unitizing is dokey's. What comes back is
-    tables tagged with the sheet they came from; what a workbook has no room
-    for is a heading, so the prose unitizer is not involved at all.
+    A workbook carries its structure -- coordinates, types, merges, sheet
+    names -- so there is nothing for a layout converter to reconstruct, and
+    it is read directly: the OOXML zip through the standard library, the
+    legacy binary through xlrd. The container is recognized by its bytes
+    rather than its suffix, because files in the wild wear extensions their
+    bytes do not honour. Only a format neither reader opens still goes to the
+    converter, and an explicitly supplied block stream is honoured as the
+    instruction it is.
     """
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")
@@ -1633,23 +1637,20 @@ def run_sheet_ingest(args: argparse.Namespace) -> None:
     if not input_path.is_file():
         raise SystemExit(f"Spreadsheet not found: {input_path}")
     output_dir = getattr(args, "output_dir", None) or _default_lake_dir(input_path)
+    explicit_blocks = getattr(args, "blocks", None)
 
-    # A legacy binary workbook never sees the converter: the converter cannot
-    # open it, and a grid needs no layout reconstruction anyway.
-    if not sheetslib.needs_converter(input_path):
-        sections, report = sheetslib.read_xls(input_path)
+    if explicit_blocks is None and sheetslib.is_legacy_workbook(input_path):
+        read = sheetslib.read_xls(input_path)
         print(f"{input_path.name}: legacy workbook, read directly (no converter)")
-        print(f"Sheets: {report.summary()}")
-        _write_sections_lake(
-            sections,
-            input_path=input_path,
-            output_dir=output_dir,
-            source_label="spreadsheet",
-            extra_report={"sheets": report.as_dict()},
-        )
+        _finish_sheet_lake(read, input_path, output_dir)
+        return
+    if explicit_blocks is None and sheetslib.is_native_workbook(input_path):
+        read = sheetslib.read_xlsx(input_path)
+        print(f"{input_path.name}: workbook, read directly (no converter)")
+        _finish_sheet_lake(read, input_path, output_dir)
         return
 
-    blocks = getattr(args, "blocks", None) or blockslib.find_source_blocks(input_path)
+    blocks = explicit_blocks or blockslib.find_source_blocks(input_path)
     if blocks is None:
         converter, source = convertlib.resolve_converter()
         if converter is None:
@@ -1684,6 +1685,44 @@ def run_sheet_ingest(args: argparse.Namespace) -> None:
         output_dir=output_dir,
         source_label="spreadsheet",
         extra_report={"sheets": report.as_dict()},
+    )
+
+
+def _finish_sheet_lake(
+    read, input_path: Path, output_dir: Path
+) -> None:
+    """Write a directly-read workbook's lake, evidence layers included.
+
+    The cells go to bronze under their own references -- the record the
+    rendered sections can be checked against -- and what the workbook
+    declares about its objects goes to silver with its anchors. Media bytes
+    are carried as they are; reading a picture is a VLM's job, not this one's.
+    """
+    if not read.sections:
+        raise SystemExit("No sheets to ingest: the workbook is empty.")
+    print(f"Sheets: {read.report.summary()}")
+    if read.cells:
+        cells_path = sheetslib.write_cells(output_dir, read.cells)
+        print(f"Wrote cells: {cells_path} ({len(read.cells)} cell(s))")
+    if read.objects:
+        objects_path = sheetslib.write_objects(output_dir, read.objects)
+        print(
+            f"Wrote objects: {objects_path} "
+            f"({read.report.charts} chart(s), {read.report.images} image(s), "
+            f"{read.report.shapes} text shape(s))"
+        )
+    if read.media:
+        media_dir = sheetslib.write_media(output_dir, read.media)
+        print(f"Wrote media: {media_dir} ({len(read.media)} file(s))")
+    extra = {"sheets": read.report.as_dict()}
+    if read.regions:
+        extra["regions"] = read.regions
+    _write_sections_lake(
+        read.sections,
+        input_path=input_path,
+        output_dir=output_dir,
+        source_label="spreadsheet",
+        extra_report=extra,
     )
 
 

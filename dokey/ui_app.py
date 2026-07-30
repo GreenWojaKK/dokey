@@ -637,9 +637,15 @@ def _sheet_ingest_form(upload) -> None:
     names, is free to read and is shown instead.
     """
     st.caption(t("sheet_input_caption"))
-    # A legacy .xls is read directly (the converter cannot open it), so the
-    # two shapes need different things in reach before the button is live.
-    if sheetslib.needs_converter(Path(upload.name)):
+    # A workbook carries its own structure and is read from the file: OOXML
+    # natively, the legacy binary through xlrd. Only a format neither reader
+    # opens needs the converter, so what must be in reach before the button
+    # goes live depends on which of the three this is.
+    suffix = Path(upload.name).suffix.lower()
+    if not sheetslib.needs_converter(Path(upload.name)) and suffix not in sheetslib.LEGACY_SUFFIXES:
+        blocked = False
+        st.caption(t("sheet_native_caption"))
+    elif sheetslib.needs_converter(Path(upload.name)):
         converter, source = convertlib.resolve_converter()
         blocked = converter is None
         if blocked:

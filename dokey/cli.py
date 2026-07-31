@@ -2022,15 +2022,21 @@ def run_convert(args: argparse.Namespace) -> None:
             print()
             print(convertlib.install_hint())
             return
-        if saved is not None:
+        # The full listing lives here rather than in the app: a form asks
+        # which converter reads *this* document, which is a different
+        # question from what the machine has and what each one keeps.
+        listed = ([("saved", saved)] if saved is not None else []) + [
+            ("discovered", converter) for converter in found
+        ]
+        for source, converter in listed:
             print(
-                f"Saved converter: {saved.display()} "
-                f"({converterslib.yields_label(saved.kind)})"
+                f"{source.title()}: {converter.kind} — "
+                f"{converterslib.yields_label(converter.kind)}"
             )
-        for converter in found:
+            print(f"  command: {converter.display()}")
             print(
-                f"Discovered: {converter.display()} "
-                f"({converterslib.yields_label(converter.kind)})"
+                "  reads: "
+                + " ".join(sorted(converterslib.accepted_suffixes(converter.kind)))
             )
         print(f"Saved defaults: {convertlib.load_options().describe()}")
         print("Convert a document with:  dokey convert <file.pdf>")

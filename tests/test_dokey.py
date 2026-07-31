@@ -838,6 +838,31 @@ class UiIngestPanelTests(unittest.TestCase):
         app.button(key="import_open").click().run()
         return app
 
+    def test_an_empty_project_opens_import_without_a_redundant_sidebar_action(
+        self,
+    ) -> None:
+        from streamlit.testing.v1 import AppTest
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            previous_cwd = Path.cwd()
+            previous_config = os.environ.get("DOKEY_CONFIG_DIR")
+            os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
+            os.chdir(tmp_path)
+            try:
+                app_path = Path(__file__).resolve().parents[1] / "dokey" / "ui_app.py"
+                app = AppTest.from_file(str(app_path), default_timeout=30).run()
+                self.assertFalse(app.exception)
+                sidebar_buttons = {widget.key for widget in app.sidebar.button}
+                self.assertNotIn("import_open", sidebar_buttons)
+                self.assertIn("ing_mode", {widget.key for widget in app.radio})
+            finally:
+                os.chdir(previous_cwd)
+                if previous_config is None:
+                    os.environ.pop("DOKEY_CONFIG_DIR", None)
+                else:
+                    os.environ["DOKEY_CONFIG_DIR"] = previous_config
+
     def test_the_import_form_takes_the_pane_and_leaves_the_sidebar_to_navigation(
         self,
     ) -> None:
@@ -1347,18 +1372,22 @@ class UiRerunCostTests(unittest.TestCase):
         making the offer out of bytes turned every click into a re-read of the
         book.
         """
-        path = Path(__file__).resolve().parents[1] / "dokey" / "ui_app.py"
-        tree = ast.parse(path.read_text(encoding="utf-8"))
         staging = {"_offer_preview", "_staged_key", "_md_ingest_form", "_auto_ingest_form"}
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.FunctionDef) or node.name not in staging:
-                continue
-            reads = [
-                child.attr
-                for child in ast.walk(node)
-                if isinstance(child, ast.Attribute) and child.attr == "getvalue"
-            ]
-            self.assertEqual(reads, [], f"{node.name} reads the document")
+        ui_root = Path(__file__).resolve().parents[1] / "dokey" / "ui"
+        found = set()
+        for name in ("preview.py", "ingest.py", "ingest_pdf.py"):
+            tree = ast.parse((ui_root / name).read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.FunctionDef) or node.name not in staging:
+                    continue
+                found.add(node.name)
+                reads = [
+                    child.attr
+                    for child in ast.walk(node)
+                    if isinstance(child, ast.Attribute) and child.attr == "getvalue"
+                ]
+                self.assertEqual(reads, [], f"{node.name} reads the document")
+        self.assertEqual(found, staging)
 
 
 class UiPreviewPlacementTests(unittest.TestCase):

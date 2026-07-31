@@ -74,6 +74,43 @@ def _targets(to: str | Sequence[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(wanted))
 
 
+class ConversionFailed(SystemExit):
+    """A converter was run and would not read this document.
+
+    Raised instead of predicting, beforehand, which formats a tool accepts.
+    A prediction about someone else's program drifts and then refuses things
+    that work; running it cannot be wrong about what it does. So the attempt
+    is made and the tool's own words are carried back -- with the last line
+    first, because that is where a Python traceback puts the reason.
+    """
+
+    def __init__(
+        self,
+        *,
+        converter: "Converter",
+        input_path: Path,
+        returncode: int | None,
+        detail: str,
+    ) -> None:
+        self.converter = converter
+        self.input_path = input_path
+        self.returncode = returncode
+        self.detail = detail
+        super().__init__(self.message())
+
+    def reason(self) -> str:
+        """The tool's own last word, which is where it says what went wrong."""
+        lines = [line.strip() for line in self.detail.splitlines() if line.strip()]
+        return lines[-1] if lines else "the converter said nothing"
+
+    def message(self) -> str:
+        return (
+            f"{self.converter.kind} could not read {self.input_path.name} "
+            f"(exit {self.returncode if self.returncode is not None else '?'}): "
+            f"{self.reason()}"
+        )
+
+
 @dataclass(frozen=True)
 class Converter:
     """A resolved document-converter command prefix.
@@ -406,9 +443,11 @@ def convert(
             produced.append(_restore_name(chosen[0], input_path.stem))
     if getattr(proc, "returncode", 1) != 0 or not produced:
         detail = (getattr(proc, "stderr", "") or getattr(proc, "stdout", "") or "").strip()
-        raise SystemExit(
-            f"Conversion failed ({converter.display()}, exit "
-            f"{getattr(proc, 'returncode', '?')}):\n{detail or 'no output'}"
+        raise ConversionFailed(
+            converter=converter,
+            input_path=input_path,
+            returncode=getattr(proc, "returncode", None),
+            detail=detail,
         )
     return tuple(produced)
 

@@ -49,25 +49,23 @@ _YIELDS: dict[str, frozenset[str]] = {
     "markitdown": frozenset({"markdown"}),
     "custom": frozenset({"markdown", "blocks"}),
 }
-# Spreadsheets are read natively by default, but a converter route stays
-# *choosable* for the OOXML kinds -- an instruction outranks a default -- and
-# what each route costs is stated where the choice is made. The legacy .xls
-# is not offered: the reference converter cannot open one, measured.
-_ACCEPTS: dict[str, frozenset[str]] = {
-    "docling": PAGED_SUFFIXES
-    | FLOW_SUFFIXES
-    | frozenset({".xlsx", ".xlsm", ".ods", ".xlsb"}),
-    # markitdown opens workbooks -- the OOXML kinds and, measured, the legacy
-    # binary too (pandas + xlrd) -- and its render keeps sheet identity as
-    # markdown headings, one per sheet. What it drops is everything else the
-    # file states: pictures, text boxes, merges, coordinates. So the route is
-    # offered, with that cost written where it is chosen.
-    "markitdown": PAGED_SUFFIXES
-    | FLOW_SUFFIXES
-    | frozenset({".xlsx", ".xlsm", ".xls"}),
-    "custom": PAGED_SUFFIXES
-    | FLOW_SUFFIXES
-    | frozenset({".xlsx", ".xlsm", ".ods", ".xlsb"}),
+# What each converter is *known* to handle well. This is an ordering hint and
+# nothing more: it may put the likeliest tool first, and it may not refuse.
+#
+# A list of accepted extensions is a prediction, and a prediction about
+# someone else's program drifts -- this one did, twice, and each time a format
+# the tool had always opened was unreachable until a user was refused for no
+# reason. The tools are the authority on what they open, and the only way to
+# ask them that cannot be wrong is to run them. So dokey tries, and reports
+# what came back. Being told "that failed, here is what it said" after a few
+# seconds beats being told "not supported" by a table that was never true.
+_KNOWN_FOR: dict[str, frozenset[str]] = {
+    "docling": PAGED_SUFFIXES | FLOW_SUFFIXES | frozenset({".xlsx", ".xlsm", ".ods"}),
+    # markitdown's render keeps sheet identity as markdown headings, one per
+    # sheet, and drops everything else the file states: pictures, text boxes,
+    # merges, coordinates. That cost is stated where the choice is made.
+    "markitdown": PAGED_SUFFIXES | FLOW_SUFFIXES | frozenset({".xlsx", ".xls"}),
+    "custom": PAGED_SUFFIXES | FLOW_SUFFIXES | frozenset({".xlsx", ".xlsm", ".ods"}),
 }
 
 
@@ -80,13 +78,14 @@ def adapter_yields(kind: str) -> frozenset[str]:
     return _YIELDS.get(kind, _YIELDS["custom"])
 
 
-def accepts(kind: str, suffix: str) -> bool:
-    return suffix.lower() in _ACCEPTS.get(kind, _ACCEPTS["custom"])
+def known_for(kind: str, suffix: str) -> bool:
+    """Whether this converter is a likely fit -- an ordering hint, not a gate."""
+    return suffix.lower() in _KNOWN_FOR.get(kind, _KNOWN_FOR["custom"])
 
 
-def accepted_suffixes(kind: str) -> frozenset[str]:
-    """Which formats this kind of converter is offered for."""
-    return _ACCEPTS.get(kind, _ACCEPTS["custom"])
+def known_suffixes(kind: str) -> frozenset[str]:
+    """The formats this converter is known for; it may well open others."""
+    return _KNOWN_FOR.get(kind, _KNOWN_FOR["custom"])
 
 
 def yields_label(kind: str) -> str:
@@ -187,12 +186,14 @@ def choose(
     """The converter for this input: flag, then saved setting, then evidence.
 
     The ladder is the one every dokey seam uses. ``prefer`` is this run's
-    instruction and outranks everything -- but an instruction that cannot
-    satisfy the caller (a scan needs the block stream; markdown-only tools
-    have none) is refused in so many words rather than silently replaced,
-    because doing something other than what was asked is worse than stopping.
-    A saved converter wins next, whenever it accepts the format at all. Among
-    discovered converters the order is evidence order.
+    instruction and outranks everything -- including dokey's opinion of which
+    formats that tool handles, which is a hint and not a veto. What a
+    converter will not open, it says itself when it is run, and that answer
+    is worth more than a prediction. The one refusal kept here is about
+    *evidence*, not formats: a scanned page has nothing but its image, so a
+    converter that cannot yield the block stream cannot serve it at all, and
+    substituting another tool would be doing something other than what was
+    asked.
     """
     suffix = input_path.suffix.lower()
     pool = _pool(candidates)
@@ -202,11 +203,6 @@ def choose(
             raise SystemExit(
                 f"Converter not found on this machine: {prefer}\n"
                 "Install it, or name a full command instead."
-            )
-        if not accepts(converter.kind, suffix):
-            raise SystemExit(
-                f"{prefer} does not open {suffix or 'this format'}. dokey "
-                "reads it directly from the file; drop --converter."
             )
         yields = adapter_yields(converter.kind)
         if require_blocks and "blocks" not in yields:
@@ -221,19 +217,96 @@ def choose(
             yields=yields,
             degraded=suffix in PAGED_SUFFIXES and "blocks" not in yields,
         )
-    for source, converter in pool:
-        if not accepts(converter.kind, suffix):
-            continue
+    ranked = candidates_for(input_path, require_blocks=require_blocks, candidates=pool)
+    return ranked[0] if ranked else None
+
+
+def candidates_for(
+    input_path: Path,
+    *,
+    require_blocks: bool = False,
+    candidates: list[tuple[str, convertlib.Converter]] | None = None,
+) -> list[Choice]:
+    """Every converter worth trying for this input, likeliest first.
+
+    Nothing is dropped for the format's sake: the ordering puts the tool
+    dokey knows the format for at the front, and leaves the others behind it
+    to be tried if that one will not read the file. The only exclusion is
+    about evidence -- a converter with no block stream cannot serve a scan,
+    which is a fact about what the ingest needs rather than a prediction
+    about what the tool opens.
+    """
+    suffix = input_path.suffix.lower()
+    pool = _pool(candidates)
+    ordered = sorted(
+        pool,
+        key=lambda item: (item[0] != "config", not known_for(item[1].kind, suffix)),
+    )
+    ranked: list[Choice] = []
+    for source, converter in ordered:
         yields = adapter_yields(converter.kind)
         if require_blocks and "blocks" not in yields:
             continue
-        return Choice(
-            converter=converter,
-            source=source,
-            yields=yields,
-            degraded=suffix in PAGED_SUFFIXES and "blocks" not in yields,
+        ranked.append(
+            Choice(
+                converter=converter,
+                source=source,
+                yields=yields,
+                degraded=suffix in PAGED_SUFFIXES and "blocks" not in yields,
+            )
         )
-    return None
+    return ranked
+
+
+def attempt(
+    input_path: Path,
+    convert,
+    *,
+    require_blocks: bool = False,
+    prefer: str | None = None,
+    candidates: list[tuple[str, convertlib.Converter]] | None = None,
+    announce=print,
+) -> tuple[Choice, tuple[Path, ...]]:
+    """Run converters until one reads the document, then say which did.
+
+    This is the whole of dokey's answer to "does this tool support that
+    format": it tries. The likely fit goes first, and when it will not read
+    the file, the tool's own words are shown and the next one is tried. Only
+    when all of them have refused does the ingest stop -- and then the report
+    is what each said, not a claim from a table about what they accept.
+
+    An explicit instruction is not second-guessed: naming a converter means
+    that one, and its failure is the answer.
+    """
+    pool = _pool(candidates)
+    if prefer:
+        choice = choose(
+            input_path, require_blocks=require_blocks, prefer=prefer, candidates=pool
+        )
+        return choice, convert(choice)
+
+    tried: list[tuple[Choice, str]] = []
+    for choice in candidates_for(
+        input_path, require_blocks=require_blocks, candidates=pool
+    ):
+        try:
+            return choice, convert(choice)
+        except convertlib.ConversionFailed as failure:
+            tried.append((choice, failure.reason()))
+            announce(f"{choice.converter.kind} could not read it: {failure.reason()}")
+    if not tried:
+        raise SystemExit(
+            flow_install_hint()
+            if is_flow_document(input_path)
+            else convertlib.install_hint()
+        )
+    lines = [f"No converter here could read {input_path.name}:"]
+    lines += [f"  {item.converter.kind}: {reason}" for item, reason in tried]
+    lines.append(
+        "Install another converter, or convert the file yourself and add the "
+        "result."
+    )
+    raise SystemExit("\n".join(lines))
 
 
 def flow_install_hint() -> str:

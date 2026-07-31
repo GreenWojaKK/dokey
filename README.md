@@ -479,6 +479,24 @@ format itself states**:
 - A **self-describing** format (`xlsx`, `xls`) never reaches a converter at
   all: dokey reads the file itself.
 
+**Which converter opens which format is settled by running it, not by a table
+of claims.** dokey keeps a short list of what each tool is *known for*, and
+that list orders the attempts — it has no power to refuse. A prediction about
+someone else's program drifts: this one did, twice, and each time a format the
+tool had always handled was unreachable until somebody was refused for no
+reason. So dokey tries the likely tool, and if it will not read the file,
+shows **the tool's own last line** and tries the next one. Only when all of
+them have declined does the ingest stop, and then the report is what each said:
+
+```text
+docling could not read 견적서.xls (exit 1): docling.exceptions.ConversionError:
+  … An unexpected error occurred while opening the document.
+```
+
+Being told that after a few seconds beats being told "not supported" by a table
+that was never true. Naming a converter yourself is not second-guessed either —
+its failure is the answer, not a cue to substitute a tool you did not ask for.
+
 Discovery mirrors every other BYO seam, and so does the resolution ladder:
 **flag > saved setting > discovery**. `--converter markitdown` (a name, or a
 full command) picks the tool for one run — measured on the same docx, 2.9 s

@@ -1851,25 +1851,23 @@ def run_flow_ingest(args: argparse.Namespace) -> None:
         raise SystemExit(f"Document not found: {input_path}")
     output_dir = getattr(args, "output_dir", None) or _default_lake_dir(input_path)
 
-    choice = converterslib.choose(
-        input_path, prefer=getattr(args, "converter", None)
-    )
-    if choice is None:
-        raise SystemExit(converterslib.flow_install_hint())
-    print(f"{input_path.name}: converting with {choice.display()}")
     options = convertlib.load_options()
-    targets = (
-        convertlib.DEFAULT_TARGETS if "blocks" in choice.yields else ("md",)
-    )
     started = time.time()
-    produced = convertlib.convert(
-        input_path,
-        choice.converter,
-        to=targets,
-        ocr=False,
-        device=options.device,
-        images=options.images or "placeholder",
-        timeout=getattr(args, "timeout", convertlib.DEFAULT_TIMEOUT),
+
+    def run(choice):
+        print(f"{input_path.name}: converting with {choice.display()}")
+        return convertlib.convert(
+            input_path,
+            choice.converter,
+            to=convertlib.DEFAULT_TARGETS if "blocks" in choice.yields else ("md",),
+            ocr=False,
+            device=options.device,
+            images=options.images or "placeholder",
+            timeout=getattr(args, "timeout", convertlib.DEFAULT_TIMEOUT),
+        )
+
+    choice, produced = converterslib.attempt(
+        input_path, run, prefer=getattr(args, "converter", None)
     )
     render = next((path for path in produced if path.suffix == ".md"), None)
     if render is None:
@@ -2034,9 +2032,12 @@ def run_convert(args: argparse.Namespace) -> None:
                 f"{converterslib.yields_label(converter.kind)}"
             )
             print(f"  command: {converter.display()}")
+            # "Known for", not "reads": what a tool opens is settled by
+            # running it, and this list is only where dokey looks first.
             print(
-                "  reads: "
-                + " ".join(sorted(converterslib.accepted_suffixes(converter.kind)))
+                "  known for: "
+                + " ".join(sorted(converterslib.known_suffixes(converter.kind)))
+                + " (others are tried too)"
             )
         print(f"Saved defaults: {convertlib.load_options().describe()}")
         print("Convert a document with:  dokey convert <file.pdf>")

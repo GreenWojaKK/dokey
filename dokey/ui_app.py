@@ -694,16 +694,24 @@ def _sheet_read_options(suffix: str) -> tuple[list[tuple[str | None, str]], bool
         if converter.kind in seen:
             continue
         seen.add(converter.kind)
-        if not converterslib.accepts(converter.kind, suffix):
-            continue
-        # Both converter routes are offered, each labelled with what it
-        # loses: the block route keeps sheet-tagged tables; the markdown
+        # Every converter the machine has is offered, none filtered out on a
+        # prediction about what it opens: what a tool will not read, it says
+        # when it is run, and that reaches the reader as a message rather
+        # than as an option that was never there. Each is labelled with what
+        # it loses -- the block route keeps sheet-tagged tables, the markdown
         # route keeps sheets as headings and tables, and nothing else.
         if "blocks" in converterslib.adapter_yields(converter.kind):
             label = t("sheet_read_converter", kind=converter.kind)
         else:
             label = t("sheet_read_converter_md", kind=converter.kind)
         options.append((converter.kind, label))
+    # The likely fit first, so the box opens on the sensible one.
+    options.sort(
+        key=lambda option: (
+            option[0] is not None,
+            not converterslib.known_for(option[0] or "", suffix),
+        )
+    )
     return options, blocked
 
 

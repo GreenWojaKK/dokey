@@ -2120,27 +2120,120 @@ class ConverterRegistryTests(unittest.TestCase):
             )
         self.assertIn("markitdown", str(caught.exception))
 
-    def test_naming_a_tool_that_cannot_open_the_format_is_refused(self) -> None:
+    def test_a_format_table_does_not_get_to_refuse(self) -> None:
         from dokey import converters
 
-        # The reference converter cannot open a legacy .xls -- measured -- so
-        # instructing it to is refused in dokey's words, not the tool's.
-        with self.assertRaises(SystemExit) as caught:
-            converters.choose(
-                Path("장부.xls"),
-                prefer="docling",
-                candidates=[("discovered", self._conv("docling"))],
-            )
-        self.assertIn(".xls", str(caught.exception))
-        # An OOXML workbook, by the same instruction, is convertible: the
-        # native read is the default, not a wall.
+        # dokey used to predict which formats each tool accepts, and the
+        # prediction was wrong twice -- each time a format the tool had
+        # always opened was unreachable. Naming a converter now means that
+        # converter, whatever dokey thinks of the extension; what it will
+        # not read, it says when it runs.
         choice = converters.choose(
-            Path("장부.xlsx"),
+            Path("장부.xls"),
             prefer="docling",
-            require_blocks=True,
             candidates=[("discovered", self._conv("docling"))],
         )
         self.assertEqual(choice.converter.kind, "docling")
+
+    def test_the_likely_fit_is_tried_first_without_excluding_the_rest(self) -> None:
+        from dokey import converters
+
+        # A workbook is markitdown's business more than docling's, so it
+        # goes first -- but docling stays in the pool, because an ordering
+        # hint that removed candidates would be the old gate again.
+        pool = [
+            ("discovered", self._conv("docling")),
+            ("discovered", self._conv("markitdown")),
+        ]
+        choice = converters.choose(Path("장부.xls"), candidates=pool)
+        self.assertEqual(choice.converter.kind, "markitdown")
+        self.assertTrue(converters.known_for("markitdown", ".xls"))
+        self.assertFalse(converters.known_for("docling", ".xls"))
+
+    def test_every_converter_is_tried_before_the_ingest_gives_up(self) -> None:
+        from dokey import converters
+
+        # The answer to "does this tool support that format" is the attempt.
+        # The first refuses in its own words, the second reads it, and the
+        # reader is told which one did.
+        said: list[str] = []
+        attempts: list[str] = []
+
+        def convert(choice):
+            attempts.append(choice.converter.kind)
+            if choice.converter.kind == "docling":
+                raise convertlib.ConversionFailed(
+                    converter=choice.converter,
+                    input_path=Path("보고서.docx"),
+                    returncode=1,
+                    detail="Traceback...\nUnsupported format: docx",
+                )
+            return (Path("보고서.md"),)
+
+        choice, produced = converters.attempt(
+            Path("보고서.docx"),
+            convert,
+            candidates=[
+                ("discovered", self._conv("docling")),
+                ("discovered", self._conv("markitdown")),
+            ],
+            announce=said.append,
+        )
+        self.assertEqual(attempts, ["docling", "markitdown"])
+        self.assertEqual(choice.converter.kind, "markitdown")
+        self.assertEqual(produced, (Path("보고서.md"),))
+        # The tool's own last line is what the reader hears.
+        self.assertIn("Unsupported format: docx", said[0])
+
+    def test_when_all_of_them_refuse_the_report_is_what_each_said(self) -> None:
+        from dokey import converters
+
+        def convert(choice):
+            raise convertlib.ConversionFailed(
+                converter=choice.converter,
+                input_path=Path("이상한.docx"),
+                returncode=1,
+                detail=f"{choice.converter.kind} says no",
+            )
+
+        with self.assertRaises(SystemExit) as caught:
+            converters.attempt(
+                Path("이상한.docx"),
+                convert,
+                candidates=[
+                    ("discovered", self._conv("docling")),
+                    ("discovered", self._conv("markitdown")),
+                ],
+                announce=lambda _line: None,
+            )
+        message = str(caught.exception)
+        self.assertIn("docling says no", message)
+        self.assertIn("markitdown says no", message)
+
+    def test_a_named_converter_is_not_second_guessed(self) -> None:
+        from dokey import converters
+
+        # Naming one means that one: its failure is the answer, not a cue to
+        # try something else the reader did not ask for.
+        def convert(choice):
+            raise convertlib.ConversionFailed(
+                converter=choice.converter,
+                input_path=Path("보고서.docx"),
+                returncode=1,
+                detail="no",
+            )
+
+        with self.assertRaises(SystemExit):
+            converters.attempt(
+                Path("보고서.docx"),
+                convert,
+                prefer="docling",
+                candidates=[
+                    ("discovered", self._conv("docling")),
+                    ("discovered", self._conv("markitdown")),
+                ],
+                announce=lambda _line: None,
+            )
 
     def test_a_preference_that_is_not_a_name_is_read_as_a_command(self) -> None:
         from dokey import converters

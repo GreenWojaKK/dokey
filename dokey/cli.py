@@ -1691,6 +1691,52 @@ def run_sheet_ingest(args: argparse.Namespace) -> None:
     # would be doing something other than what was asked.
     prefer = getattr(args, "converter", None)
 
+    if explicit_blocks is None and prefer is not None:
+        choice = converterslib.choose(input_path, prefer=prefer)
+        if choice is not None and "blocks" not in choice.yields:
+            # A markdown-only converter keeps sheet identity as headings --
+            # measured: one "## name" per sheet -- and drops everything else
+            # the file states. The route is honoured because it was asked
+            # for, and the cost is said before the work starts.
+            print(f"{input_path.name}: converting with {choice.display()}")
+            print(
+                "Note: this route keeps sheets and tables only. Pictures, "
+                "text boxes, merges and cell coordinates are not carried; "
+                "the direct read (default) keeps them."
+            )
+            options = convertlib.load_options()
+            started = time.time()
+            produced = convertlib.convert(
+                input_path,
+                choice.converter,
+                to=("md",),
+                ocr=False,
+                device=options.device,
+                images=options.images or "placeholder",
+                timeout=getattr(args, "timeout", convertlib.DEFAULT_TIMEOUT),
+            )
+            render = next(
+                (path for path in produced if path.suffix == ".md"), None
+            )
+            if render is None:
+                raise SystemExit("The converter produced no Markdown to ingest.")
+            print(f"Converted in {time.time() - started:.1f}s: {render.name}")
+            _ingest_markdown(
+                render.read_text(encoding="utf-8"),
+                input_path=input_path,
+                output_dir=output_dir,
+                fallback_title=input_path.stem,
+                source_label="spreadsheet",
+                profile=getattr(args, "profile", "auto"),
+                write_items=not getattr(args, "no_items", False),
+                provenance=(
+                    f"converted by {choice.converter.display()} (markdown "
+                    "only; pictures, text boxes, merges and coordinates not "
+                    "carried)"
+                ),
+            )
+            return
+
     if explicit_blocks is None and prefer is None and sheetslib.is_legacy_workbook(
         input_path
     ):

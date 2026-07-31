@@ -974,9 +974,16 @@ class UiIngestPanelTests(unittest.TestCase):
                 self.assertIn("sheet_run", buttons)
                 self.assertNotIn("md_run", buttons)
                 self.assertNotIn("ing_mode", {w.key for w in app.radio})
-                # The reading path stands in the open, the direct read first.
+                # The converter choice stands in the open: the direct read
+                # first, and every converter that can serve -- markitdown
+                # included, since its render keeps sheet names as headings.
                 selects = {w.key: w for w in app.selectbox}
                 self.assertIn("sheet_read", selects)
+                labels = [str(option) for option in selects["sheet_read"].options]
+                if any("markitdown" in label for label in labels) is False and any(
+                    "docling" in label for label in labels
+                ):
+                    self.fail(f"markitdown missing from converter options: {labels}")
             finally:
                 os.chdir(previous_cwd)
                 if previous_config is None:
@@ -2304,6 +2311,61 @@ class ConverterRegistryTests(unittest.TestCase):
                 ]
                 self.assertEqual([row["title"] for row in rows], ["점검"])
                 self.assertFalse((lake / "bronze" / "cells.jsonl").exists())
+            finally:
+                if previous is None:
+                    os.environ.pop("DOKEY_CONFIG_DIR", None)
+                else:
+                    os.environ["DOKEY_CONFIG_DIR"] = previous
+
+    def test_a_markdown_converter_reads_a_workbook_by_its_headings(self) -> None:
+        # markitdown keeps sheet identity as one heading per sheet --
+        # measured -- so the markdown route is honoured when asked for, and
+        # the lake shows its cost: no cells.jsonl, and the provenance says
+        # what was not carried.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            previous = os.environ.get("DOKEY_CONFIG_DIR")
+            os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
+            try:
+                render = "## 시트하나\n\n| 항목 | 값 |\n|---|---|\n| 가 | 1 |\n"
+                script = tmp_path / "stub_md.py"
+                script.write_text(
+                    "import sys\nfrom pathlib import Path\n"
+                    "out = Path(sys.argv[sys.argv.index('-o') + 1])\n"
+                    f"out.write_text({render!r}, encoding='utf-8')\n",
+                    encoding="utf-8",
+                )
+                convertlib.save_converter(
+                    convertlib.Converter((sys.executable, str(script)), "markitdown")
+                )
+                book = tmp_path / "장부.xlsx"
+                with zipfile.ZipFile(book, "w") as archive:
+                    archive.writestr(
+                        "xl/workbook.xml",
+                        '<workbook xmlns="http://schemas.openxmlformats.org/'
+                        'spreadsheetml/2006/main"><sheets>'
+                        '<sheet name="시트하나" sheetId="1"/></sheets></workbook>',
+                    )
+                lake = tmp_path / "lake"
+                main(
+                    [
+                        "auto", str(book),
+                        "--converter", "markitdown",
+                        "--output-dir", str(lake),
+                    ]
+                )
+                rows = [
+                    json.loads(line)
+                    for line in (lake / "silver" / "sections.jsonl")
+                    .read_text(encoding="utf-8")
+                    .splitlines()
+                ]
+                self.assertEqual([row["title"] for row in rows], ["시트하나"])
+                self.assertFalse((lake / "bronze" / "cells.jsonl").exists())
+                report = (lake / "bronze" / "md_ingest.json").read_text(
+                    encoding="utf-8"
+                )
+                self.assertIn("not carried", report)
             finally:
                 if previous is None:
                     os.environ.pop("DOKEY_CONFIG_DIR", None)

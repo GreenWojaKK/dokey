@@ -757,13 +757,16 @@ def _sheet_read_options(suffix: str) -> tuple[list[tuple[str | None, str]], bool
         if converter.kind in seen:
             continue
         seen.add(converter.kind)
-        if "blocks" not in converterslib.adapter_yields(converter.kind):
-            continue
         if not converterslib.accepts(converter.kind, suffix):
             continue
-        options.append(
-            (converter.kind, t("sheet_read_converter", kind=converter.kind))
-        )
+        # Both converter routes are offered, each labelled with what it
+        # loses: the block route keeps sheet-tagged tables; the markdown
+        # route keeps sheets as headings and tables, and nothing else.
+        if "blocks" in converterslib.adapter_yields(converter.kind):
+            label = t("sheet_read_converter", kind=converter.kind)
+        else:
+            label = t("sheet_read_converter_md", kind=converter.kind)
+        options.append((converter.kind, label))
     return options, blocked
 
 

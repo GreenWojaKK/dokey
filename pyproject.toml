@@ -28,7 +28,7 @@ docling = [
 # numbers and dokey says so. Same arm's-length rule as docling: never
 # imported, only run.
 markitdown = [
-  "markitdown[docx,pptx,pdf]>=0.1",
+  "markitdown[docx,pptx,pdf,xlsx,xls]>=0.1",
 ]
 app = [
   "streamlit>=1.48",

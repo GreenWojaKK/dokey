@@ -57,10 +57,14 @@ _ACCEPTS: dict[str, frozenset[str]] = {
     "docling": PAGED_SUFFIXES
     | FLOW_SUFFIXES
     | frozenset({".xlsx", ".xlsm", ".ods", ".xlsb"}),
-    # markitdown does open the OOXML workbook kinds; what it cannot do is
-    # yield the block stream that sheet identity travels in, and the
-    # require-blocks rule states that refusal precisely.
-    "markitdown": PAGED_SUFFIXES | FLOW_SUFFIXES | frozenset({".xlsx", ".xlsm"}),
+    # markitdown opens workbooks -- the OOXML kinds and, measured, the legacy
+    # binary too (pandas + xlrd) -- and its render keeps sheet identity as
+    # markdown headings, one per sheet. What it drops is everything else the
+    # file states: pictures, text boxes, merges, coordinates. So the route is
+    # offered, with that cost written where it is chosen.
+    "markitdown": PAGED_SUFFIXES
+    | FLOW_SUFFIXES
+    | frozenset({".xlsx", ".xlsm", ".xls"}),
     "custom": PAGED_SUFFIXES
     | FLOW_SUFFIXES
     | frozenset({".xlsx", ".xlsm", ".ods", ".xlsb"}),
@@ -208,8 +212,8 @@ def choose(
         if require_blocks and "blocks" not in yields:
             raise SystemExit(
                 f"{prefer} yields markdown only, and this ingest needs the "
-                "block stream -- a scan has nothing else to read, and a "
-                "workbook's sheet identity travels in it. Use docling here."
+                "block stream -- a scanned page has nothing else to read. "
+                "Use docling here."
             )
         return Choice(
             converter=converter,

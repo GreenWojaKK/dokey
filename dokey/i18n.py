@@ -104,6 +104,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "{kind} — sheets rendered as tables; coordinates, merges and "
             "charts are lost"
         ),
+        "sheet_read_converter_md": (
+            "{kind} — markdown with sheet names as headings; tables only "
+            "(pictures, text boxes, merges and coordinates are lost)"
+        ),
         "sheet_will_read": "This read would yield: {summary}",
         "flow_input_caption": (
             "A flow document: converted to Markdown, then unitized by heading. "
@@ -422,6 +426,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "sheet_read_converter": (
             "{kind} — 시트를 표로 렌더; 좌표·병합·차트는 소실"
+        ),
+        "sheet_read_converter_md": (
+            "{kind} — 시트명을 표제로 한 마크다운; 표만 (그림·텍스트상자·"
+            "병합·좌표 소실)"
         ),
         "sheet_will_read": "이 읽기가 낼 것: {summary}",
         "flow_input_caption": (

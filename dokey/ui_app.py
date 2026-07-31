@@ -632,44 +632,98 @@ def run_hwp_ingest_ui(upload, lake_name: str) -> None:
     st.rerun()
 
 
+def _sheet_read_summary(staged) -> str | None:
+    """What the native read would yield, measured on the file itself.
+
+    The read is the standard library (or xlrd), so it is cheap enough to run
+    before anyone presses the button -- and a form that shows "4 regions, 1
+    table, 2 banners, 87 merges" is the difference between a path a reader
+    trusts and one that merely claims to work. Cached per file version, and a
+    failure costs a missing caption, never the form.
+    """
+    key = _staged_key(staged)
+    cache = st.session_state.setdefault("_sheet_summaries", {})
+    if key in cache:
+        return cache[key]
+    summary = None
+    try:
+        path = getattr(staged, "path", None)
+        suffix = Path(staged.name).suffix.lower()
+        if suffix in sheetslib.LEGACY_SUFFIXES:
+            if path is not None:
+                summary = sheetslib.read_xls(Path(path)).report.summary()
+        else:
+            source = Path(path) if path is not None else io.BytesIO(staged.getvalue())
+            summary = sheetslib.read_xlsx(source).report.summary()
+    except (Exception, SystemExit):
+        summary = None
+    cache[key] = summary
+    return summary
+
+
+def _sheet_read_options(suffix: str) -> tuple[list[tuple[str | None, str]], bool]:
+    """The reading paths this workbook offers, each labelled with its cost.
+
+    ``None`` is the native read. Converter routes are listed only where they
+    can actually serve -- a kind must yield the block stream (sheet identity
+    travels in it) and accept the format -- so what the box offers is exactly
+    what would run, with the trade written on it.
+    """
+    options: list[tuple[str | None, str]] = []
+    blocked = False
+    if suffix in sheetslib.LEGACY_SUFFIXES:
+        options.append((None, t("sheet_read_native_legacy")))
+        if not sheetslib.can_read_legacy():
+            blocked = True
+    elif not sheetslib.needs_converter(Path(f"x{suffix}")):
+        options.append((None, t("sheet_read_native")))
+    saved = convertlib.load_converter()
+    seen: set[str] = set()
+    for converter in ([saved] if saved else []) + converterslib.discover():
+        if converter.kind in seen:
+            continue
+        seen.add(converter.kind)
+        if "blocks" not in converterslib.adapter_yields(converter.kind):
+            continue
+        if not converterslib.accepts(converter.kind, suffix):
+            continue
+        options.append(
+            (converter.kind, t("sheet_read_converter", kind=converter.kind))
+        )
+    return options, blocked
+
+
 def _sheet_ingest_form(upload) -> None:
     """Spreadsheet ingest: one sheet becomes one section, named by the workbook.
 
-    The layout converter reads the tables -- merged cells, the legacy binary
-    formats -- and dokey only decides the unit, which for a workbook is the
-    sheet. The prose unitizer is never involved, so none of the depth or
-    language questions are asked here; the one honest preview, the sheet
-    names, is free to read and is shown instead.
+    The reading path is the form's first question, out in the open: the
+    native read (cells, merges, charts, anchors -- the default) against the
+    converter route (tables only), each labelled with what it keeps. The
+    prose unitizer is never involved, so none of the depth or language
+    questions are asked; what *is* shown is what the chosen path would read.
     """
     st.caption(t("sheet_input_caption"))
-    # A workbook carries its own structure and is read from the file: OOXML
-    # natively, the legacy binary through xlrd. Only a format neither reader
-    # opens needs the converter, so what must be in reach before the button
-    # goes live depends on which of the three this is.
     suffix = Path(upload.name).suffix.lower()
-    if not sheetslib.needs_converter(Path(upload.name)) and suffix not in sheetslib.LEGACY_SUFFIXES:
-        blocked = False
-        st.caption(t("sheet_native_caption"))
-    elif sheetslib.needs_converter(Path(upload.name)):
-        converter, source = convertlib.resolve_converter()
-        blocked = converter is None
-        if blocked:
-            st.warning(t("sheet_converter_offline"))
-        else:
-            known = {"config", "discovered", "flag"}
-            st.caption(
-                t(
-                    "converter_online",
-                    cmd=converter.display(),
-                    source=t(f"converter_source_{source}") if source in known else source,
-                )
-            )
-    else:
-        blocked = not sheetslib.can_read_legacy()
-        if blocked:
-            st.warning(t("sheet_xlrd_offline"))
-        else:
-            st.caption(t("sheet_legacy_caption"))
+    options, blocked = _sheet_read_options(suffix)
+    if blocked:
+        st.warning(t("sheet_xlrd_offline"))
+    if not options:
+        st.warning(t("sheet_converter_offline"))
+        blocked = True
+    chosen: str | None = None
+    if options:
+        selected = st.selectbox(
+            t("sheet_read_path"),
+            options,
+            format_func=lambda option: option[1],
+            key="sheet_read",
+            help=t("sheet_read_path_help"),
+        )
+        chosen = selected[0]
+    if chosen is None and options and not blocked:
+        summary = _sheet_read_summary(upload)
+        if summary:
+            st.caption(t("sheet_will_read", summary=summary))
     path = getattr(upload, "path", None)
     names = sheetslib.sheet_names(path if path else io.BytesIO(upload.getvalue()))
     named = [name for name in names if name.strip()]
@@ -684,10 +738,10 @@ def _sheet_ingest_form(upload) -> None:
         t("library_name_optional"), value="", key="sheet_name"
     )
     if _run_button("sheet_run", disabled=blocked):
-        run_sheet_ingest_ui(upload, lake_name)
+        run_sheet_ingest_ui(upload, lake_name, chosen)
 
 
-def run_sheet_ingest_ui(upload, lake_name: str) -> None:
+def run_sheet_ingest_ui(upload, lake_name: str, converter: str | None = None) -> None:
     """Save the workbook, run the exact CLI sheet-ingest path, open the new lake."""
     work = Path(tempfile.mkdtemp(prefix="dokey_ui_sheet_"))
     book_path = work / upload.name
@@ -695,7 +749,11 @@ def run_sheet_ingest_ui(upload, lake_name: str) -> None:
 
     name = lake_name.strip() or Path(upload.name).stem
     out_dir = _project_output_dir(name)
-    args = SimpleNamespace(input=book_path, output_dir=out_dir)
+    args = SimpleNamespace(
+        input=book_path,
+        output_dir=out_dir,
+        converter=converter,  # the form's pick is this run's instruction
+    )
 
     log = io.StringIO()
     try:
@@ -1123,25 +1181,29 @@ def run_md_ingest_ui(
 
 
 def converter_status() -> bool:
-    """Show whether a layout converter is in reach, and say so either way.
+    """Show every converter in reach and what each one keeps.
 
-    Nothing has to be configured for one to be used: dokey looks for it on
-    PATH and in the interpreter running dokey, exactly as the CLI does. The
-    caption exists so the answer is visible before a scanned book is added
-    rather than after it indexes empty.
+    Nothing has to be configured for one to be used: dokey looks on PATH and
+    in the interpreter running dokey, exactly as the CLI does. The caption
+    exists so the answer is visible before a scanned book is added rather
+    than after it indexes empty -- and so the tools stop being invisible
+    machinery: which ones the machine offers, and how much survives each, is
+    stated where the choice will matter.
     """
-    converter, source = convertlib.resolve_converter()
-    if converter is None:
+    saved = convertlib.load_converter()
+    entries = []
+    seen: set[str] = set()
+    for converter in ([saved] if saved else []) + converterslib.discover():
+        if converter.kind in seen:
+            continue
+        seen.add(converter.kind)
+        entries.append(
+            f"{converter.kind} — {converterslib.yields_label(converter.kind)}"
+        )
+    if not entries:
         st.caption(t("converter_offline"))
         return False
-    known = {"config", "discovered", "flag"}
-    st.caption(
-        t(
-            "converter_online",
-            cmd=converter.display(),
-            source=t(f"converter_source_{source}") if source in known else source,
-        )
-    )
+    st.caption(t("converters_discovered", list=" · ".join(entries)))
     return True
 
 

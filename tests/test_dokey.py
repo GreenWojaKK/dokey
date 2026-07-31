@@ -974,6 +974,9 @@ class UiIngestPanelTests(unittest.TestCase):
                 self.assertIn("sheet_run", buttons)
                 self.assertNotIn("md_run", buttons)
                 self.assertNotIn("ing_mode", {w.key for w in app.radio})
+                # The reading path stands in the open, the direct read first.
+                selects = {w.key: w for w in app.selectbox}
+                self.assertIn("sheet_read", selects)
             finally:
                 os.chdir(previous_cwd)
                 if previous_config is None:
@@ -2082,6 +2085,28 @@ class ConverterRegistryTests(unittest.TestCase):
             )
         self.assertIn("markitdown", str(caught.exception))
 
+    def test_naming_a_tool_that_cannot_open_the_format_is_refused(self) -> None:
+        from dokey import converters
+
+        # The reference converter cannot open a legacy .xls -- measured -- so
+        # instructing it to is refused in dokey's words, not the tool's.
+        with self.assertRaises(SystemExit) as caught:
+            converters.choose(
+                Path("장부.xls"),
+                prefer="docling",
+                candidates=[("discovered", self._conv("docling"))],
+            )
+        self.assertIn(".xls", str(caught.exception))
+        # An OOXML workbook, by the same instruction, is convertible: the
+        # native read is the default, not a wall.
+        choice = converters.choose(
+            Path("장부.xlsx"),
+            prefer="docling",
+            require_blocks=True,
+            candidates=[("discovered", self._conv("docling"))],
+        )
+        self.assertEqual(choice.converter.kind, "docling")
+
     def test_a_preference_that_is_not_a_name_is_read_as_a_command(self) -> None:
         from dokey import converters
 
@@ -2113,6 +2138,20 @@ class ConverterRegistryTests(unittest.TestCase):
     def _flow_stub(self, tmp: Path, grammar: str) -> Path:
         """A stand-in converter for either grammar; writes a heading render."""
         render = "# 보고\n\n## 1. 개요\n\n본문.\n\n## 2. 결과\n\n본문.\n"
+        blocks = {
+            "texts": [],
+            "tables": [
+                {
+                    "prov": [{"page_no": 1}],
+                    "data": {
+                        "grid": [
+                            [{"text": "항목"}, {"text": "값"}],
+                            [{"text": "가"}, {"text": "1"}],
+                        ]
+                    },
+                }
+            ],
+        }
         if grammar == "markitdown":
             body = (
                 "import sys\nfrom pathlib import Path\n"
@@ -2128,7 +2167,7 @@ class ConverterRegistryTests(unittest.TestCase):
                 "out.mkdir(parents=True, exist_ok=True)\n"
                 f"(out / (source.stem + '.md')).write_text({render!r}, encoding='utf-8')\n"
                 "if 'json' in argv:\n"
-                "    (out / (source.stem + '.json')).write_text(json.dumps({'texts': []}), encoding='utf-8')\n"
+                f"    (out / (source.stem + '.json')).write_text(json.dumps({blocks!r}), encoding='utf-8')\n"
             )
         script = tmp / f"stub_{grammar}.py"
         script.write_text(body, encoding="utf-8")
@@ -2172,6 +2211,51 @@ class ConverterRegistryTests(unittest.TestCase):
         self.assertIn("converted by", report)
         report = self._flow_e2e("markitdown", "markitdown")
         self.assertIn("markdown only", report)
+
+    def test_the_converter_flag_outranks_the_native_workbook_reader(self) -> None:
+        # `dokey auto x.xlsx --converter …` used to be silently ignored: the
+        # native probe won before the instruction was consulted. An
+        # instruction outranks a default, and the lake shows which path ran
+        # -- the converter route writes no cells.jsonl, since it has no
+        # coordinates to record.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            previous = os.environ.get("DOKEY_CONFIG_DIR")
+            os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
+            try:
+                script = self._flow_stub(tmp_path, "docling")
+                convertlib.save_converter(
+                    convertlib.Converter((sys.executable, str(script)), "custom")
+                )
+                book = tmp_path / "장부.xlsx"
+                with zipfile.ZipFile(book, "w") as archive:
+                    archive.writestr(
+                        "xl/workbook.xml",
+                        '<workbook xmlns="http://schemas.openxmlformats.org/'
+                        'spreadsheetml/2006/main"><sheets>'
+                        '<sheet name="점검" sheetId="1"/></sheets></workbook>',
+                    )
+                lake = tmp_path / "lake"
+                main(
+                    [
+                        "auto", str(book),
+                        "--converter", "custom",
+                        "--output-dir", str(lake),
+                    ]
+                )
+                rows = [
+                    json.loads(line)
+                    for line in (lake / "silver" / "sections.jsonl")
+                    .read_text(encoding="utf-8")
+                    .splitlines()
+                ]
+                self.assertEqual([row["title"] for row in rows], ["점검"])
+                self.assertFalse((lake / "bronze" / "cells.jsonl").exists())
+            finally:
+                if previous is None:
+                    os.environ.pop("DOKEY_CONFIG_DIR", None)
+                else:
+                    os.environ["DOKEY_CONFIG_DIR"] = previous
 
     def test_the_converter_flag_reaches_the_flow_route(self) -> None:
         # `--converter markitdown` picks the saved markitdown build for this

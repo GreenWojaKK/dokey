@@ -506,7 +506,12 @@ its coordinate, typed and dated; merges are declared; sheets are named in the
 workbook's own manifest. A layout converter reconstructs — here there is
 nothing to reconstruct, only to read. So dokey reads the workbook itself, with
 the standard library (an `.xlsx` is a zip of XML), and no converter is involved
-at all. A **legacy `.xls`** takes the same path through `xlrd`, recognized by
+by default. The converter route stays *choosable* — `--converter docling`, or
+the app's **Reading path** dropdown — with its cost written where the choice is
+made: sheets rendered as tables, coordinates, merges and charts lost. The app's
+sheet form also shows what the direct read *would* yield ("2 sheets, 3 regions
+— 2 tables, 1 field block…, headers proven") before anything is written, so the
+path is visible rather than implied. A **legacy `.xls`** takes the same path through `xlrd`, recognized by
 its OLE2 container magic rather than its suffix, because files in the wild wear
 extensions their bytes do not honour. Only a format neither reader opens
 (`.ods`, `.xlsb`) still goes to the converter.

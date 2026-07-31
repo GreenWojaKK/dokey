@@ -53,7 +53,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "backend_source_config": "saved setting",
         "backend_source_default": "default",
         "pdf": "PDF",
-        "document_file": "PDF · HWP/HWPX · Markdown · Excel (xlsx)",
+        "document_file": "PDF · HWP/HWPX · Markdown · Excel · Word · PPT · HTML",
         "sheet_input_caption": (
             "A workbook is unitized by sheet: each sheet becomes one section, "
             "titled by its own sheet name, tables intact. None of the heading "
@@ -68,10 +68,28 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "No layout converter found — reading a workbook's tables needs one. "
             "`pip install docling` and dokey runs it from here, no setup."
         ),
-        "sheet_native_caption": (
-            "Read directly from the file — cells, merges, charts and images "
-            "with their cell anchors. No converter involved."
+        "converters_discovered": "Converters on this machine: {list}",
+        "sheet_read_path": "Reading path",
+        "sheet_read_path_help": (
+            "How this workbook is read. The direct read opens the file itself "
+            "and keeps everything it states — cells with coordinates, merges, "
+            "charts with the ranges they plot, images with their anchors. The "
+            "converter route renders sheets as tables and keeps none of that; "
+            "it exists so the choice is yours, with the cost in view."
         ),
+        "sheet_read_native": (
+            "Direct read — cells, merges, charts and images, with coordinates "
+            "(no converter)"
+        ),
+        "sheet_read_native_legacy": (
+            "Direct read via xlrd — cells, types and merges (converters cannot "
+            "open this format)"
+        ),
+        "sheet_read_converter": (
+            "{kind} — sheets rendered as tables; coordinates, merges and "
+            "charts are lost"
+        ),
+        "sheet_will_read": "This read would yield: {summary}",
         "flow_input_caption": (
             "A flow document: converted to Markdown, then unitized by heading. "
             "The source states no pages — pagination is a rendering artifact — "
@@ -88,9 +106,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "No converter found for this format. The light option is enough: "
             "`pip install markitdown[docx,pptx]` — or `pip install docling`, "
             "which also keeps page evidence for PDFs."
-        ),
-        "sheet_legacy_caption": (
-            "A legacy .xls workbook: read directly, no converter involved."
         ),
         "sheet_xlrd_offline": (
             "Reading a legacy .xls needs xlrd (`pip install xlrd`) — or save "
@@ -163,15 +178,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "No HWP converter found. Install hwp2md, or set one from a terminal: "
             "`dokey hwp --set \"...\"`."
         ),
-        "converter_online": "Layout converter: {cmd} ({source})",
         "converter_offline": (
             "No layout converter found. Scanned pages have no text to read and "
             "would index empty; `pip install docling` and dokey runs it from "
             "here, no setup."
         ),
-        "converter_source_config": "saved",
-        "converter_source_discovered": "found on this machine",
-        "converter_source_flag": "command option",
         "read_method": "Reading the PDF",
         "read_method_auto": "Automatic",
         "read_method_never": "Text layer only",
@@ -349,7 +360,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "backend_source_config": "저장된 설정",
         "backend_source_default": "기본값",
         "pdf": "PDF",
-        "document_file": "PDF · HWP/HWPX · 마크다운 · 엑셀(xlsx)",
+        "document_file": "PDF · HWP/HWPX · 마크다운 · 엑셀 · 워드 · PPT · HTML",
         "sheet_input_caption": (
             "워크북은 시트 단위로 쪼개집니다 — 시트 하나가 절 하나가 되고, "
             "제목은 시트명이며 표는 그대로 실립니다. 표제 관련 설정은 "
@@ -364,10 +375,25 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "필요합니다. `pip install docling`만 하면 별도 설정 없이 dokey가 "
             "여기서 실행합니다."
         ),
-        "sheet_native_caption": (
-            "파일에서 직접 읽습니다 — 셀·병합·차트·그림을 셀 앵커와 함께. "
-            "변환기는 관여하지 않습니다."
+        "converters_discovered": "이 컴퓨터의 변환기: {list}",
+        "sheet_read_path": "읽기 경로",
+        "sheet_read_path_help": (
+            "이 워크북을 어떻게 읽을지 정합니다. 직독은 파일 자체를 열어 "
+            "파일이 진술하는 전부 — 좌표 있는 셀·병합·그리는 범위가 적힌 "
+            "차트·앵커 있는 그림 — 를 보존합니다. 변환기 경로는 시트를 표로 "
+            "렌더하며 그것들을 보존하지 않습니다. 선택은 사용자의 몫이되, "
+            "비용이 보이는 곳에서 하도록 두 경로를 나란히 둡니다."
         ),
+        "sheet_read_native": (
+            "직독 — 셀·병합·차트·그림을 좌표와 함께 (변환기 없음)"
+        ),
+        "sheet_read_native_legacy": (
+            "직독(xlrd) — 셀·타입·병합 (변환기는 이 형식을 열지 못합니다)"
+        ),
+        "sheet_read_converter": (
+            "{kind} — 시트를 표로 렌더; 좌표·병합·차트는 소실"
+        ),
+        "sheet_will_read": "이 읽기가 낼 것: {summary}",
         "flow_input_caption": (
             "흐름 문서: 마크다운으로 변환한 뒤 heading 단위로 쪼갭니다. "
             "원본에 지면이 없으므로(쪽 매김은 조판 산물) 마크다운만 내는 "
@@ -383,9 +409,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "이 형식을 받을 변환기가 없습니다. 경량으로 충분합니다: "
             "`pip install markitdown[docx,pptx]` — 또는 PDF의 지면 증거까지 "
             "보존하는 `pip install docling`."
-        ),
-        "sheet_legacy_caption": (
-            "구형 .xls 워크북: 변환기 없이 직접 읽습니다."
         ),
         "sheet_xlrd_offline": (
             "구형 .xls를 읽으려면 xlrd가 필요합니다(`pip install xlrd`) — "
@@ -456,15 +479,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "HWP 변환기를 찾지 못했습니다. hwp2md를 설치하거나, 터미널에서 "
             "`dokey hwp --set \"...\"`로 지정하세요."
         ),
-        "converter_online": "레이아웃 변환기: {cmd} ({source})",
         "converter_offline": (
             "레이아웃 변환기를 찾지 못했습니다. 스캔 지면은 읽을 텍스트가 없어 "
             "빈 채로 색인됩니다. `pip install docling`을 하면 별도 설정 없이 "
             "dokey가 여기서 실행합니다."
         ),
-        "converter_source_config": "저장된 설정",
-        "converter_source_discovered": "이 컴퓨터에서 발견",
-        "converter_source_flag": "명령 옵션",
         "read_method": "PDF 읽기 방식",
         "read_method_auto": "자동",
         "read_method_never": "텍스트 층만",

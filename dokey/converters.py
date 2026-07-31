@@ -49,10 +49,21 @@ _YIELDS: dict[str, frozenset[str]] = {
     "markitdown": frozenset({"markdown"}),
     "custom": frozenset({"markdown", "blocks"}),
 }
+# Spreadsheets are read natively by default, but a converter route stays
+# *choosable* for the OOXML kinds -- an instruction outranks a default -- and
+# what each route costs is stated where the choice is made. The legacy .xls
+# is not offered: the reference converter cannot open one, measured.
 _ACCEPTS: dict[str, frozenset[str]] = {
-    "docling": PAGED_SUFFIXES | FLOW_SUFFIXES | frozenset({".ods", ".xlsb"}),
-    "markitdown": PAGED_SUFFIXES | FLOW_SUFFIXES,
-    "custom": PAGED_SUFFIXES | FLOW_SUFFIXES | frozenset({".ods", ".xlsb"}),
+    "docling": PAGED_SUFFIXES
+    | FLOW_SUFFIXES
+    | frozenset({".xlsx", ".xlsm", ".ods", ".xlsb"}),
+    # markitdown does open the OOXML workbook kinds; what it cannot do is
+    # yield the block stream that sheet identity travels in, and the
+    # require-blocks rule states that refusal precisely.
+    "markitdown": PAGED_SUFFIXES | FLOW_SUFFIXES | frozenset({".xlsx", ".xlsm"}),
+    "custom": PAGED_SUFFIXES
+    | FLOW_SUFFIXES
+    | frozenset({".xlsx", ".xlsm", ".ods", ".xlsb"}),
 }
 
 
@@ -183,12 +194,17 @@ def choose(
                 f"Converter not found on this machine: {prefer}\n"
                 "Install it, or name a full command instead."
             )
+        if not accepts(converter.kind, suffix):
+            raise SystemExit(
+                f"{prefer} does not open {suffix or 'this format'}. dokey "
+                "reads it directly from the file; drop --converter."
+            )
         yields = adapter_yields(converter.kind)
         if require_blocks and "blocks" not in yields:
             raise SystemExit(
-                f"{prefer} yields markdown only, and this input needs the "
-                "block stream (a scanned page has nothing else to offer). "
-                "Use docling here."
+                f"{prefer} yields markdown only, and this ingest needs the "
+                "block stream -- a scan has nothing else to read, and a "
+                "workbook's sheet identity travels in it. Use docling here."
             )
         return Choice(
             converter=converter,

@@ -162,7 +162,11 @@ def read_figures(
 
     objects: list[tuple[str, dict]] = []
     for container in ("pictures", "tables"):
-        for item in document.get(container) or []:
+        for index, item in enumerate(document.get(container) or []):
+            # The converter writes self_ref on everything it emits, but a
+            # block stream from elsewhere may not, and a missing name must
+            # not cost the whole ingest -- position names it well enough.
+            item.setdefault("self_ref", f"#/{container}/{index}")
             objects.append((_kind_of(container), item))
     report.pictures = sum(1 for kind, _ in objects if kind == "picture")
     report.tables = sum(1 for kind, _ in objects if kind == "table")

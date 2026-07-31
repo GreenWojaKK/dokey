@@ -1686,13 +1686,21 @@ def run_sheet_ingest(args: argparse.Namespace) -> None:
         raise SystemExit(f"Spreadsheet not found: {input_path}")
     output_dir = getattr(args, "output_dir", None) or _default_lake_dir(input_path)
     explicit_blocks = getattr(args, "blocks", None)
+    # Naming a converter is an instruction, and an instruction outranks the
+    # native reader -- silently reading directly after being told otherwise
+    # would be doing something other than what was asked.
+    prefer = getattr(args, "converter", None)
 
-    if explicit_blocks is None and sheetslib.is_legacy_workbook(input_path):
+    if explicit_blocks is None and prefer is None and sheetslib.is_legacy_workbook(
+        input_path
+    ):
         read = sheetslib.read_xls(input_path)
         print(f"{input_path.name}: legacy workbook, read directly (no converter)")
         _finish_sheet_lake(read, input_path, output_dir)
         return
-    if explicit_blocks is None and sheetslib.is_native_workbook(input_path):
+    if explicit_blocks is None and prefer is None and sheetslib.is_native_workbook(
+        input_path
+    ):
         read = sheetslib.read_xlsx(input_path)
         print(f"{input_path.name}: workbook, read directly (no converter)")
         _finish_sheet_lake(read, input_path, output_dir)

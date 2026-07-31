@@ -455,6 +455,39 @@ the web UI offers the same three choices under **Advanced overrides**. When
 `dokey auto` does convert, it takes both formats too, so the sections of a
 scanned book get the pages the converter recorded rather than synthetic ones.
 
+## Flow documents, and a converter registry typed by evidence
+
+```powershell
+pip install markitdown[docx,pptx]   # the light option — no torch
+dokey auto "보고서.docx"             # convert, unitize by heading, index
+```
+
+Converters are not interchangeable engines: they differ in **what survives the
+conversion**. Docling emits a Markdown render *and* a block stream that keeps
+pages and coordinates; MarkItDown-class tools emit Markdown and nothing else.
+So dokey's registry is organized by evidence, under the same rule the workbook
+reader established — **demand from a converter exactly the evidence the source
+format itself states**:
+
+- A **paged** format (PDF) states pages. A converter that keeps them is
+  preferred; a markdown-only one may still be used — it may be all the machine
+  has — but the loss is declared up front and the sections' synthetic page
+  numbers are never passed off as read.
+- A **flow** format (`docx`, `pptx`, `html`, `epub`) states no pages —
+  pagination there is a rendering artifact. A markdown-only converter loses
+  nothing structural, so the lightest tool present is fully adequate.
+- A **self-describing** format (`xlsx`, `xls`) never reaches a converter at
+  all: dokey reads the file itself.
+
+Discovery mirrors every other BYO seam: whatever is on PATH or importable is
+offered, richest evidence first; a converter saved with `dokey convert --set`
+is an instruction and wins — though the evidence verdict still travels with
+it. `dokey convert` with no input lists everything found and what each keeps.
+Each ingest records which converter produced the render (`converted_by` in
+`bronze/md_ingest.json`), the way a table records what proved its header. A
+scanned PDF still requires a converter that reconstructs pages: a
+markdown-only tool would read the empty text layer and return silence.
+
 ## Spreadsheets: read from the file, in the order its evidence is stated
 
 ```powershell

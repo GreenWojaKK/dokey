@@ -30,6 +30,7 @@ if _REPO_ROOT not in sys.path:
 from dokey import backends as backendslib
 from dokey import cli as dokey_cli
 from dokey import convert as convertlib
+from dokey import converters as converterslib
 from dokey import hwp as hwplib
 from dokey import mdunit
 from dokey import blocks as blockslib
@@ -506,6 +507,9 @@ def import_view() -> None:
     if upload is not None and sheetslib.is_spreadsheet(Path(upload.name)):
         _sheet_ingest_form(upload)
         return
+    if upload is not None and converterslib.is_flow_document(Path(upload.name)):
+        _flow_ingest_form(upload)
+        return
     if upload is not None and mdunit.is_markdown(Path(upload.name)):
         _md_ingest_form(upload)
         return
@@ -526,6 +530,7 @@ def import_view() -> None:
 DOCUMENT_TYPES = [
     "pdf", "hwp", "hwpx", "md", "markdown",
     "xlsx", "xlsm", "xlsb", "xls", "ods",
+    "docx", "pptx", "html", "htm", "epub",
 ]
 
 
@@ -939,6 +944,76 @@ def preview_pane() -> bool:
     st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True, height=560)
     st.caption(t("preview_not_extracted"))
     return True
+
+
+def _flow_ingest_form(upload) -> None:
+    """Flow-document ingest: convert, then unitize by heading.
+
+    A flow format states no pages, so by the evidence rule a markdown-only
+    converter loses nothing structural -- the lightest tool on the machine is
+    enough, and the form says which one will run.
+    """
+    st.caption(t("flow_input_caption"))
+    choice = converterslib.choose(Path(upload.name))
+    if choice is None:
+        st.warning(t("flow_converter_offline"))
+    else:
+        st.caption(t("flow_converter_online", converter=choice.display()))
+    essentials = st.columns(3)
+    with essentials[0]:
+        lake_name = st.text_input(
+            t("library_name_optional"), value="", key="flow_name"
+        )
+    with essentials[1]:
+        depth = _section_depth_input("flow_depth")
+    with essentials[2]:
+        profile = _language_profile_input("flow_profile")
+    write_items = _write_items_input("flow_items")
+    if _run_button("flow_run", disabled=choice is None):
+        run_flow_ingest_ui(upload, lake_name, depth, profile, write_items)
+
+
+def run_flow_ingest_ui(
+    upload,
+    lake_name: str,
+    section_depth: str = "auto",
+    profile: str = "auto",
+    write_items: bool = True,
+) -> None:
+    """Save the document, run the exact CLI flow-ingest path, open the lake."""
+    work = Path(tempfile.mkdtemp(prefix="dokey_ui_flow_"))
+    doc_path = work / upload.name
+    doc_path.write_bytes(upload.getvalue())
+
+    name = lake_name.strip() or Path(upload.name).stem
+    out_dir = _project_output_dir(name)
+    args = SimpleNamespace(
+        input=doc_path,
+        output_dir=out_dir,
+        section_depth=section_depth,
+        profile=profile,
+        no_items=not write_items,
+    )
+
+    log = io.StringIO()
+    try:
+        with st.spinner(t("ingesting", name=upload.name)), \
+                contextlib.redirect_stdout(log):
+            dokey_cli.run_flow_ingest(args)
+    except SystemExit as exc:
+        _report_failure("ingest_failed", exc, log)
+        return
+    except Exception as exc:  # surface any pipeline error in the browser
+        _report_failure(
+            "ingest_error", exc, log, trace=traceback.format_exc()
+        )
+        return
+
+    st.success(t("ingested", path=out_dir))
+    with st.expander(t("ingest_log"), expanded=False):
+        st.code(log.getvalue() or t("no_output"))
+    st.session_state["_new_lake"] = str(out_dir)
+    st.rerun()
 
 
 def _md_ingest_form(upload) -> None:

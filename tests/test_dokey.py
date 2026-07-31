@@ -719,13 +719,13 @@ class FolderPickerTests(unittest.TestCase):
         self.assertIn(f"initialdir={json.dumps(str(project))}", snippet)
 
     def test_file_dialog_offers_every_format_the_ingest_can_take(self) -> None:
-        from dokey import pickers, sheets
+        from dokey import converters, pickers, sheets
 
         snippet = pickers.file_dialog_snippet("pick", Path("."), Path("a.txt"))
         # The dialog's filter is a literal, so a format added to the ingest
         # can silently stay unchoosable: every suffix the router accepts has
         # to appear in it.
-        for suffix in sorted(sheets.SPREADSHEET_SUFFIXES):
+        for suffix in sorted(sheets.SPREADSHEET_SUFFIXES | converters.FLOW_SUFFIXES):
             self.assertIn(f"*{suffix}", snippet)
 
     def test_a_chosen_file_comes_back_from_the_project_picker(self) -> None:
@@ -972,6 +972,36 @@ class UiIngestPanelTests(unittest.TestCase):
                 # forms would be one section, or worse, rows dropped as
                 # running headers.
                 self.assertIn("sheet_run", buttons)
+                self.assertNotIn("md_run", buttons)
+                self.assertNotIn("ing_mode", {w.key for w in app.radio})
+            finally:
+                os.chdir(previous_cwd)
+                if previous_config is None:
+                    os.environ.pop("DOKEY_CONFIG_DIR", None)
+                else:
+                    os.environ["DOKEY_CONFIG_DIR"] = previous_config
+
+    def test_a_flow_document_routes_to_the_flow_form(self) -> None:
+        from dokey import pickers
+
+        if not pickers.HAS_FILE_PICKER:
+            self.skipTest("tkinter not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            previous_cwd = Path.cwd()
+            previous_config = os.environ.get("DOKEY_CONFIG_DIR")
+            os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
+            os.chdir(tmp_path)
+            try:
+                report = tmp_path / "보고서.docx"
+                report.write_bytes(b"stub")
+
+                app = self._importing(tmp_path)
+                app.session_state["_ingest_local_file"] = str(report)
+                app.run()
+                self.assertFalse(app.exception)
+                buttons = {widget.key for widget in app.button}
+                self.assertIn("flow_run", buttons)
                 self.assertNotIn("md_run", buttons)
                 self.assertNotIn("ing_mode", {w.key for w in app.radio})
             finally:
@@ -1911,6 +1941,171 @@ class ConverterSeamTests(unittest.TestCase):
         hint = convertlib.install_hint()
         self.assertIn("dokey[docling]", hint)
         self.assertIn("dokey convert --set", hint)
+
+
+class ConverterRegistryTests(unittest.TestCase):
+    """Converters chosen by the evidence they yield, not by their names."""
+
+    @staticmethod
+    def _conv(kind: str):
+        return convertlib.Converter(("tool",), kind)
+
+    def test_a_paged_source_prefers_the_converter_that_keeps_pages(self) -> None:
+        from dokey import converters
+
+        choice = converters.choose(
+            Path("book.pdf"),
+            candidates=[
+                ("discovered", self._conv("docling")),
+                ("discovered", self._conv("markitdown")),
+            ],
+        )
+        self.assertEqual(choice.converter.kind, "docling")
+        self.assertFalse(choice.degraded)
+
+    def test_a_markdown_only_converter_on_a_pdf_is_declared_degraded(self) -> None:
+        from dokey import converters
+
+        # It may be all the machine has, so it is used -- but the pages the
+        # source states will not survive, and that verdict travels with the
+        # choice instead of being discovered in the manifest later.
+        choice = converters.choose(
+            Path("book.pdf"),
+            candidates=[("discovered", self._conv("markitdown"))],
+        )
+        self.assertEqual(choice.converter.kind, "markitdown")
+        self.assertTrue(choice.degraded)
+
+    def test_a_flow_source_is_not_degraded_by_a_markdown_converter(self) -> None:
+        from dokey import converters
+
+        # A docx states no pages -- pagination is a rendering artifact -- so
+        # markdown-only conversion loses nothing the source ever stated.
+        choice = converters.choose(
+            Path("보고서.docx"),
+            candidates=[("discovered", self._conv("markitdown"))],
+        )
+        self.assertFalse(choice.degraded)
+        self.assertTrue(converters.is_flow_document(Path("보고서.docx")))
+        self.assertFalse(converters.is_flow_document(Path("보고서.pdf")))
+
+    def test_an_instruction_wins_but_the_verdict_still_travels(self) -> None:
+        from dokey import converters
+
+        # A saved converter is an instruction and outranks discovery -- the
+        # evidence rule does not override it, it annotates it.
+        choice = converters.choose(
+            Path("book.pdf"),
+            candidates=[
+                ("config", self._conv("markitdown")),
+                ("discovered", self._conv("docling")),
+            ],
+        )
+        self.assertEqual(choice.source, "config")
+        self.assertTrue(choice.degraded)
+
+    def test_requiring_blocks_skips_what_cannot_yield_them(self) -> None:
+        from dokey import converters
+
+        # A scanned page has nothing but its image: a markdown-only tool
+        # would read the empty text layer and return silence.
+        candidates = [
+            ("config", self._conv("markitdown")),
+            ("discovered", self._conv("docling")),
+        ]
+        choice = converters.choose(
+            Path("scan.pdf"), require_blocks=True, candidates=candidates
+        )
+        self.assertEqual(choice.converter.kind, "docling")
+        self.assertIsNone(
+            converters.choose(
+                Path("scan.pdf"),
+                require_blocks=True,
+                candidates=[("discovered", self._conv("markitdown"))],
+            )
+        )
+
+    def test_markitdown_speaks_its_own_grammar(self) -> None:
+        converter = convertlib.Converter(("markitdown",), "markitdown")
+        command = convertlib.build_command(
+            converter, Path("in.docx"), Path("out"), to="md"
+        )
+        self.assertEqual(command[0], "markitdown")
+        self.assertEqual(command[command.index("-o") + 1], str(Path("out") / "in.md"))
+        self.assertNotIn("--abort-on-error", command)
+        # Asking it for the block stream is refused up front, in dokey's
+        # words, rather than failing later in the tool's.
+        with self.assertRaises(SystemExit):
+            convertlib.build_command(
+                converter, Path("in.pdf"), Path("out"), to=("md", "json")
+            )
+
+    def test_the_saved_command_recognizes_markitdown_by_name(self) -> None:
+        converter = convertlib.converter_from_command("markitdown")
+        self.assertEqual(converter.kind, "markitdown")
+
+    def _flow_stub(self, tmp: Path, grammar: str) -> Path:
+        """A stand-in converter for either grammar; writes a heading render."""
+        render = "# 보고\n\n## 1. 개요\n\n본문.\n\n## 2. 결과\n\n본문.\n"
+        if grammar == "markitdown":
+            body = (
+                "import sys\nfrom pathlib import Path\n"
+                "out = Path(sys.argv[sys.argv.index('-o') + 1])\n"
+                f"out.write_text({render!r}, encoding='utf-8')\n"
+            )
+        else:
+            body = (
+                "import json, sys\nfrom pathlib import Path\n"
+                "argv = sys.argv[1:]\n"
+                "source = Path(argv[argv.index('convert') + 1])\n"
+                "out = Path(argv[argv.index('--output') + 1])\n"
+                "out.mkdir(parents=True, exist_ok=True)\n"
+                f"(out / (source.stem + '.md')).write_text({render!r}, encoding='utf-8')\n"
+                "if 'json' in argv:\n"
+                "    (out / (source.stem + '.json')).write_text(json.dumps({'texts': []}), encoding='utf-8')\n"
+            )
+        script = tmp / f"stub_{grammar}.py"
+        script.write_text(body, encoding="utf-8")
+        return script
+
+    def _flow_e2e(self, kind: str, grammar: str) -> str:
+        """Run `dokey auto x.docx` against a stub of the given grammar."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            previous = os.environ.get("DOKEY_CONFIG_DIR")
+            os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
+            try:
+                script = self._flow_stub(tmp_path, grammar)
+                convertlib.save_converter(
+                    convertlib.Converter((sys.executable, str(script)), kind)
+                )
+                source = tmp_path / "보고서.docx"
+                source.write_bytes(b"stub")
+                lake = tmp_path / "lake"
+                main(["auto", str(source), "--output-dir", str(lake)])
+                rows = [
+                    json.loads(line)
+                    for line in (lake / "silver" / "sections.jsonl")
+                    .read_text(encoding="utf-8")
+                    .splitlines()
+                ]
+                self.assertIn("1. 개요", {row["title"] for row in rows})
+                return (lake / "bronze" / "md_ingest.json").read_text(
+                    encoding="utf-8"
+                )
+            finally:
+                if previous is None:
+                    os.environ.pop("DOKEY_CONFIG_DIR", None)
+                else:
+                    os.environ["DOKEY_CONFIG_DIR"] = previous
+
+    def test_a_docx_ingests_through_whichever_grammar_is_saved(self) -> None:
+        # The same flow route serves both grammars, and the lake records
+        # which converter produced the render and how much it keeps.
+        report = self._flow_e2e("custom", "docling")
+        self.assertIn("converted by", report)
+        report = self._flow_e2e("markitdown", "markitdown")
+        self.assertIn("markdown only", report)
 
 
 class BackendTests(unittest.TestCase):

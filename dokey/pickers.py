@@ -62,7 +62,8 @@ chosen = filedialog.askopenfilename(
         (
             "Dokey documents",
             "*.pdf *.hwp *.hwpx *.md *.markdown "
-            "*.xlsx *.xlsm *.xlsb *.xls *.ods",
+            "*.xlsx *.xlsm *.xlsb *.xls *.ods "
+            "*.docx *.pptx *.html *.htm *.epub",
         ),
         ("All files", "*.*"),
     ],

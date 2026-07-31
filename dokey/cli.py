@@ -15,6 +15,7 @@ from . import backends as backendslib
 from . import blocks as blockslib
 from . import bodytoc
 from . import convert as convertlib
+from . import converters as converterslib
 from . import detect as detectlib
 from . import docname as docnamelib
 from . import figures as figureslib
@@ -666,6 +667,8 @@ def main(argv: list[str] | None = None) -> None:
             run_hwp_ingest(args)
         elif sheetslib.is_spreadsheet(args.input):
             run_sheet_ingest(args)
+        elif converterslib.is_flow_document(args.input):
+            run_flow_ingest(args)
         elif mdunit.is_markdown(args.input):
             run_md_ingest(args)
         else:
@@ -675,6 +678,8 @@ def main(argv: list[str] | None = None) -> None:
             run_hwp_ingest(args)
         elif sheetslib.is_spreadsheet(args.input):
             run_sheet_ingest(args)
+        elif converterslib.is_flow_document(args.input):
+            run_flow_ingest(args)
         elif mdunit.is_markdown(args.input):
             run_md_ingest(args)
         else:
@@ -1040,7 +1045,13 @@ def run_auto(args: argparse.Namespace) -> None:
         scanned = probe.scanned_ratio >= detectlib.SCAN_RATIO_DEFAULT
         wanted = getattr(args, "convert", "auto")
         if wanted == "always" or (scanned and wanted == "auto"):
-            converter, source = convertlib.resolve_converter()
+            # A scanned page has nothing but its image, so this branch needs
+            # a converter that reconstructs pages -- a markdown-only tool
+            # would read the empty text layer and return silence.
+            choice = converterslib.choose(input_pdf, require_blocks=True)
+            converter, source = (
+                (choice.converter, choice.source) if choice else (None, "none")
+            )
             if converter is None:
                 print()
                 print(
@@ -1366,16 +1377,22 @@ def _write_addressed_items(
     return pathslib.write_items_jsonl(rows, output_dir), report
 
 
-def _write_unitize_report(report, output_dir: Path, input_path: Path) -> Path:
+def _write_unitize_report(
+    report, output_dir: Path, input_path: Path, provenance: str | None = None
+) -> Path:
     """Record what unitizing dropped, demoted, and folded, next to the lake.
 
     A render's page furniture has to be removed for the sections to be usable,
     and removal without a record is indistinguishable from loss. This file is
     the record: counts, the marks themselves, and the ingest's known defects.
+    Which converter produced the render is part of how the sections were
+    decided, so it is recorded here too -- as provenance, not as a defect.
     """
     path = output_dir / "bronze" / "md_ingest.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {"source": input_path.name, **report.as_dict()}
+    if provenance:
+        payload["converted_by"] = provenance
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
@@ -1418,6 +1435,7 @@ def _ingest_markdown(
     profile: str = "auto",
     write_items: bool = True,
     source_blocks: Path | None = None,
+    provenance: str | None = None,
 ) -> None:
     """Unitize a Markdown string by heading and write the full lake.
 
@@ -1495,7 +1513,7 @@ def _ingest_markdown(
             f"{segment_report.skipped_rungs} skipped rungs)"
         )
 
-    report_path = _write_unitize_report(result.report, output_dir, input_path)
+    report_path = _write_unitize_report(result.report, output_dir, input_path, provenance)
     print(f"Wrote unitize report: {report_path}")
 
     _write_document_name(output_dir, input_path)
@@ -1652,10 +1670,13 @@ def run_sheet_ingest(args: argparse.Namespace) -> None:
 
     blocks = explicit_blocks or blockslib.find_source_blocks(input_path)
     if blocks is None:
-        converter, source = convertlib.resolve_converter()
-        if converter is None:
+        # Sheet identity travels in the block stream, so this fallback needs
+        # a converter that yields one.
+        choice = converterslib.choose(input_path, require_blocks=True)
+        if choice is None:
             raise SystemExit(convertlib.install_hint())
-        print(f"{input_path.name}: converting with {converter.display()} ({source})")
+        converter = choice.converter
+        print(f"{input_path.name}: converting with {choice.display()}")
         options = convertlib.load_options()
         started = time.time()
         produced = convertlib.convert(
@@ -1723,6 +1744,66 @@ def _finish_sheet_lake(
         output_dir=output_dir,
         source_label="spreadsheet",
         extra_report=extra,
+    )
+
+
+def run_flow_ingest(args: argparse.Namespace) -> None:
+    """Ingest a flow document (docx, pptx, html, epub): convert, then unitize.
+
+    A flow format states no pages -- its pagination is a rendering artifact --
+    so by the evidence rule a markdown-only converter loses nothing
+    structural, and the lightest tool on the machine is fully adequate. A
+    converter that also yields a block stream is still preferred (it can only
+    know more), and whichever one ran is recorded in the unitize report.
+    """
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
+    input_path = args.input
+    if not input_path.is_file():
+        raise SystemExit(f"Document not found: {input_path}")
+    output_dir = getattr(args, "output_dir", None) or _default_lake_dir(input_path)
+
+    choice = converterslib.choose(input_path)
+    if choice is None:
+        raise SystemExit(converterslib.flow_install_hint())
+    print(f"{input_path.name}: converting with {choice.display()}")
+    options = convertlib.load_options()
+    targets = (
+        convertlib.DEFAULT_TARGETS if "blocks" in choice.yields else ("md",)
+    )
+    started = time.time()
+    produced = convertlib.convert(
+        input_path,
+        choice.converter,
+        to=targets,
+        ocr=False,
+        device=options.device,
+        images=options.images or "placeholder",
+        timeout=getattr(args, "timeout", convertlib.DEFAULT_TIMEOUT),
+    )
+    render = next((path for path in produced if path.suffix == ".md"), None)
+    if render is None:
+        raise SystemExit("The converter produced no Markdown to ingest.")
+    print(
+        f"Converted in {time.time() - started:.1f}s: "
+        f"{', '.join(path.name for path in produced)}"
+    )
+    _ingest_markdown(
+        render.read_text(encoding="utf-8"),
+        input_path=input_path,
+        output_dir=output_dir,
+        fallback_title=input_path.stem,
+        source_label="document",
+        max_level=_section_depth(args),
+        profile=getattr(args, "profile", "auto"),
+        write_items=not getattr(args, "no_items", False),
+        source_blocks=next(
+            (path for path in produced if path.suffix == ".json"), None
+        ),
+        provenance=(
+            f"converted by {choice.converter.display()} "
+            f"({converterslib.yields_label(choice.converter.kind)})"
+        ),
     )
 
 
@@ -1843,25 +1924,49 @@ def run_convert(args: argparse.Namespace) -> None:
         convertlib.save_options(convertlib.Options())
         print("Cleared the saved converter; auto-discovery applies.")
 
-    converter, source = convertlib.resolve_converter()
     if args.input is None:
-        if converter is None:
-            print("Converter: none found")
+        found = converterslib.discover()
+        saved = convertlib.load_converter()
+        if not found and saved is None:
+            print("Converters: none found")
             print()
             print(convertlib.install_hint())
             return
-        print(f"Converter: {converter.display()} ({source})")
+        if saved is not None:
+            print(
+                f"Saved converter: {saved.display()} "
+                f"({converterslib.yields_label(saved.kind)})"
+            )
+        for converter in found:
+            print(
+                f"Discovered: {converter.display()} "
+                f"({converterslib.yields_label(converter.kind)})"
+            )
         print(f"Saved defaults: {convertlib.load_options().describe()}")
         print("Convert a document with:  dokey convert <file.pdf>")
         print("  …and unitize what comes back:  dokey convert <file.pdf> --ingest")
         return
-    if converter is None:
-        raise SystemExit(convertlib.install_hint())
 
     input_path = args.input
     if not input_path.is_file():
         raise SystemExit(f"File not found: {input_path}")
-    print(f"Converter: {converter.display()} ({source})")
+    choice = converterslib.choose(input_path)
+    if choice is None:
+        raise SystemExit(
+            converterslib.flow_install_hint()
+            if converterslib.is_flow_document(input_path)
+            else convertlib.install_hint()
+        )
+    converter = choice.converter
+    print(f"Converter: {choice.display()}")
+    if choice.degraded:
+        # The evidence rule's verdict: this source states pages and the
+        # chosen converter will not keep them. Proceed, but say so now.
+        print(
+            "Note: this converter yields markdown only, so the PDF's pages "
+            "will not survive -- sections will get synthetic page numbers. "
+            "docling keeps them."
+        )
     options = convertlib.load_options().merged(
         ocr_engine=args.ocr_engine,
         ocr_lang=args.ocr_lang,
@@ -1869,9 +1974,15 @@ def run_convert(args: argparse.Namespace) -> None:
         images=args.images if args.images != "placeholder" else None,
     )
     caution = convertlib.ocr_engine_caution(args.ocr, options.ocr_engine)
-    if caution:
+    if caution and "blocks" in choice.yields:
         print(f"Note: {caution}")
     targets = tuple(args.to) if args.to else convertlib.DEFAULT_TARGETS
+    if "blocks" not in choice.yields:
+        if args.to and "json" in targets:
+            raise SystemExit(
+                "This converter yields markdown only; --to json needs docling."
+            )
+        targets = ("md",)
     out_dir = args.output or Path.cwd()
     print(
         f"Converting {input_path.name} to {', '.join(targets)} "

@@ -23,6 +23,13 @@ ocr = [
 docling = [
   "docling>=2.115",
 ]
+# The light converter for flow documents (docx, pptx, html, epub). Markdown
+# only -- it keeps no page evidence, so a PDF through it gets synthetic page
+# numbers and dokey says so. Same arm's-length rule as docling: never
+# imported, only run.
+markitdown = [
+  "markitdown[docx,pptx,pdf]>=0.1",
+]
 app = [
   "streamlit>=1.48",
   "pywebview>=5.0",

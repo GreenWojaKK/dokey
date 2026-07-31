@@ -72,6 +72,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "Read directly from the file — cells, merges, charts and images "
             "with their cell anchors. No converter involved."
         ),
+        "flow_input_caption": (
+            "A flow document: converted to Markdown, then unitized by heading. "
+            "The source states no pages — pagination is a rendering artifact — "
+            "so a markdown-only converter loses nothing structural."
+        ),
+        "flow_converter_online": "Converter: {converter}",
+        "flow_converter_offline": (
+            "No converter found for this format. The light option is enough: "
+            "`pip install markitdown[docx,pptx]` — or `pip install docling`, "
+            "which also keeps page evidence for PDFs."
+        ),
         "sheet_legacy_caption": (
             "A legacy .xls workbook: read directly, no converter involved."
         ),
@@ -350,6 +361,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "sheet_native_caption": (
             "파일에서 직접 읽습니다 — 셀·병합·차트·그림을 셀 앵커와 함께. "
             "변환기는 관여하지 않습니다."
+        ),
+        "flow_input_caption": (
+            "흐름 문서: 마크다운으로 변환한 뒤 heading 단위로 쪼갭니다. "
+            "원본에 지면이 없으므로(쪽 매김은 조판 산물) 마크다운만 내는 "
+            "변환기로도 구조가 유실되지 않습니다."
+        ),
+        "flow_converter_online": "변환기: {converter}",
+        "flow_converter_offline": (
+            "이 형식을 받을 변환기가 없습니다. 경량으로 충분합니다: "
+            "`pip install markitdown[docx,pptx]` — 또는 PDF의 지면 증거까지 "
+            "보존하는 `pip install docling`."
         ),
         "sheet_legacy_caption": (
             "구형 .xls 워크북: 변환기 없이 직접 읽습니다."

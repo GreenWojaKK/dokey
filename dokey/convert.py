@@ -194,7 +194,15 @@ def converter_from_command(command: str) -> Converter:
     argv = tuple(shlex.split(command, posix=(sys.platform != "win32")))
     if not argv:
         raise ValueError("Empty converter command.")
-    kind = CONVERTER_NAME if CONVERTER_NAME in Path(argv[0]).name.lower() else "custom"
+    name = Path(argv[0]).name.lower()
+    if CONVERTER_NAME in name:
+        kind = CONVERTER_NAME
+    elif "markitdown" in name:
+        kind = "markitdown"
+    else:
+        # An unknown tool is assumed to speak the reference converter's
+        # grammar; saying so beats guessing per run.
+        kind = "custom"
     return Converter(argv, kind)
 
 
@@ -237,6 +245,23 @@ def build_command(
     images: str = "placeholder",
     extra: tuple[str, ...] = (),
 ) -> list[str]:
+    if converter.kind == "markitdown":
+        # MarkItDown's grammar is a different language: one input, one
+        # Markdown output, no conversion options. It yields no block stream,
+        # so asking it for one is refused here rather than failing later in
+        # its own words.
+        targets = _targets(to)
+        if targets != ("md",):
+            raise SystemExit(
+                "markitdown yields markdown only; it cannot produce the block "
+                "stream (--to json). Use docling for that."
+            )
+        return [
+            *converter.argv,
+            str(input_path),
+            "-o",
+            str(Path(output_dir) / f"{Path(input_path).stem}.md"),
+        ]
     command = [
         *converter.argv,
         "convert",

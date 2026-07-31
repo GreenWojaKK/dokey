@@ -12,63 +12,24 @@ from . import hwp as hwplib
 from . import mdunit
 from . import search as searchlib
 from . import sheets as sheetslib
-from .commands.common import (
-    _default_lake_dir,
-    _outline_max_level,
-    _section_depth,
-    _section_depth_arg,
-    resolve_lake,
-)
+# The public surface: what main dispatches to, plus the handful of names
+# outside callers (the UI, tests) reach through ``dokey.cli``. The private
+# helpers stay inside their command modules.
+from .commands.common import resolve_lake
 from .commands.documents import (
-    _no_converter_message,
     run_convert,
     run_flow_ingest,
     run_hwp_backend,
     run_hwp_ingest,
     run_md_ingest,
 )
-from .commands.folios import (
-    _find_raw_pdf,
-    _folios_calibrated,
-    _folios_exhaustive,
-    _folios_via_ocr,
-    _load_model,
-    _model_summary,
-    _results_from_model,
-    run_folios,
-)
-from .commands.lake import (
-    _finish_lake,
-    _ingest_markdown,
-    _reset_section_artifacts,
-    _write_addressed_items,
-    _write_document_name,
-    _write_mentions,
-    _write_page_texts,
-    _write_section_artifacts,
-    _write_section_pages,
-    _write_sections_lake,
-    _write_unitize_report,
-    ingest_entries,
-)
+from .commands.folios import run_folios
+from .commands.lake import ingest_entries
 from .commands.parser import build_parser
-from .commands.pdf import (
-    _convert_then_ingest,
-    _printed_toc_if_better,
-    ingest,
-    open_reader,
-    run_auto,
-    run_probe,
-)
-from .commands.runtime import (
-    _free_port,
-    _wait_for_ui,
-    run_app,
-    run_backend,
-    run_ui,
-)
+from .commands.pdf import ingest, open_reader, run_auto, run_probe
+from .commands.runtime import run_app, run_backend, run_ui
 from .commands.search import run_index, run_search
-from .commands.sheets import _finish_sheet_lake, run_sheet_ingest
+from .commands.sheets import run_sheet_ingest
 
 
 def main(argv: list[str] | None = None) -> None:

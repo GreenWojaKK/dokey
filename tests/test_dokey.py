@@ -996,8 +996,18 @@ class UiIngestPanelTests(unittest.TestCase):
             os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
             os.chdir(tmp_path)
             try:
-                app = self._app(tmp_path).run()
-                self.assertFalse(app.exception)
+                # The panel lives in the import view -- converting is part of
+                # adding a document -- so it appears when importing does, and
+                # the sidebar stays navigation.
+                closed = self._app(tmp_path).run()
+                self.assertFalse(
+                    [
+                        widget.key
+                        for widget in closed.button
+                        if str(widget.key).startswith("conv_use_")
+                    ]
+                )
+                app = self._importing(tmp_path)
                 use_keys = sorted(
                     widget.key
                     for widget in app.button

@@ -84,21 +84,21 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "for the given format goes first."
         ),
         "converter_accepts": "reads: {formats}",
-        "sheet_read_path": "Reading path",
+        "sheet_read_path": "Converter",
         "sheet_read_path_help": (
-            "How this workbook is read. The direct read opens the file itself "
-            "and keeps everything it states — cells with coordinates, merges, "
-            "charts with the ranges they plot, images with their anchors. The "
-            "converter route renders sheets as tables and keeps none of that; "
-            "it exists so the choice is yours, with the cost in view."
+            "Whether a converter reads this workbook. The default is none: "
+            "dokey reads the file itself and keeps everything it states — "
+            "cells with coordinates, merges, charts with the ranges they "
+            "plot, images with their anchors. A converter renders sheets as "
+            "tables and keeps none of that."
         ),
         "sheet_read_native": (
-            "Direct read (dokey built-in, standard library) — cells, merges, "
-            "charts and images, with coordinates; no converter"
+            "None — dokey reads the file itself (cells, merges, charts, "
+            "images, with coordinates)"
         ),
         "sheet_read_native_legacy": (
-            "Direct read (dokey built-in, via xlrd) — cells, types and merges; "
-            "converters cannot open this format"
+            "None — dokey reads the file itself via xlrd (cells, types, "
+            "merges); converters cannot open this format"
         ),
         "sheet_read_converter": (
             "{kind} — sheets rendered as tables; coordinates, merges and "
@@ -406,21 +406,19 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "변환기가 앞섭니다."
         ),
         "converter_accepts": "읽는 형식: {formats}",
-        "sheet_read_path": "읽기 경로",
+        "sheet_read_path": "변환기",
         "sheet_read_path_help": (
-            "이 워크북을 어떻게 읽을지 정합니다. 직독은 파일 자체를 열어 "
-            "파일이 진술하는 전부 — 좌표 있는 셀·병합·그리는 범위가 적힌 "
-            "차트·앵커 있는 그림 — 를 보존합니다. 변환기 경로는 시트를 표로 "
-            "렌더하며 그것들을 보존하지 않습니다. 선택은 사용자의 몫이되, "
-            "비용이 보이는 곳에서 하도록 두 경로를 나란히 둡니다."
+            "이 워크북을 변환기로 읽을지 정합니다. 기본은 사용 안 함 — "
+            "dokey가 파일 자체를 읽어 파일이 진술하는 전부(좌표 있는 셀·"
+            "병합·그리는 범위가 적힌 차트·앵커 있는 그림)를 보존합니다. "
+            "변환기는 시트를 표로 렌더하며 그것들을 보존하지 않습니다."
         ),
         "sheet_read_native": (
-            "직독(dokey 내장·표준 라이브러리) — 셀·병합·차트·그림을 좌표와 "
-            "함께; 변환기 없음"
+            "사용 안 함 — dokey가 직접 읽음 (셀·병합·차트·그림, 좌표 보존)"
         ),
         "sheet_read_native_legacy": (
-            "직독(dokey 내장, xlrd 사용) — 셀·타입·병합; 변환기는 이 형식을 "
-            "열지 못합니다"
+            "사용 안 함 — dokey가 직접 읽음(xlrd; 셀·타입·병합) — 변환기는 "
+            "이 형식을 열지 못합니다"
         ),
         "sheet_read_converter": (
             "{kind} — 시트를 표로 렌더; 좌표·병합·차트는 소실"

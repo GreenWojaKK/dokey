@@ -456,15 +456,17 @@ def backend_panel() -> None:
 
 
 def converter_panel() -> None:
-    """Every document converter on this machine, in one place.
+    """Every document converter on this machine, where converting happens.
 
-    The same bring-your-own panel the OCR backend has: dokey ships no
-    converter, shows what it discovered on PATH and in the interpreter, and
-    lets the reader make one the default. The default fills the *setting*
-    rung of the resolution ladder (flag > setting > discovery); with none
-    set, discovery order is evidence order -- the converter that keeps more
-    goes first. Each entry says what it keeps and which formats it is
-    offered for, so comparing tools does not require running them.
+    Drawn in the import view, not the sidebar: the sidebar is navigation,
+    and the tools that read a document belong beside the act of adding one.
+    dokey ships no converter -- what it discovered on PATH and in the
+    interpreter is listed, and the reader can make one the default. The
+    default fills the *setting* rung of the resolution ladder (flag >
+    setting > discovery); with none set, discovery order is evidence order
+    -- the converter that keeps more goes first. Each entry says what it
+    keeps and which formats it is offered for, so comparing tools does not
+    require running them.
     """
     with st.expander(
         t("converter_backend"), expanded=False, icon=":material/sync_alt:"
@@ -553,10 +555,21 @@ def import_control(lake: Path | None) -> None:
 
 
 def import_view() -> None:
-    """The whole add-a-book flow, in the pane with room to lay it out."""
+    """The whole add-a-book flow, in the pane with room to lay it out.
+
+    The converter panel stands here too, under the forms: converting is part
+    of adding a document, so the place to see and set the tools is the place
+    where they are about to be used -- not the sidebar, which is navigation.
+    """
     st.subheader(t("ingest_book"))
     st.caption(t("adding_to_project", project=_active_project_root().name))
     upload = _document_picker()
+    _ingest_form_for(upload)
+    converter_panel()
+
+
+def _ingest_form_for(upload) -> None:
+    """The form for what was picked, by what the format is."""
     # HWP and Markdown are flow formats with no pages, so the PDF page-offset
     # / overlap / TOC controls do not apply; both take the heading-unitized
     # path. Markdown needs no converter at all -- it is ingested as-is. A
@@ -1586,7 +1599,6 @@ def sidebar() -> tuple[Path | None, int]:
     # they opened, and the top of a navigation column is worth more than a badge.
     lake = pick_lake(lake_from_argv())
     import_control(lake)
-    converter_panel()
     backend_panel()
     with st.expander(
         t("appearance"), expanded=False, icon=":material/translate:"

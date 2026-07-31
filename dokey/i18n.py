@@ -69,6 +69,21 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "`pip install docling` and dokey runs it from here, no setup."
         ),
         "converters_discovered": "Converters on this machine: {list}",
+        "converter_backend": "Converters (bring your own)",
+        "converter_panel_caption": (
+            "dokey ships no converter — whatever is on PATH or importable is "
+            "discovered and offered, richest evidence first. Setting a default "
+            "fills the middle rung of the ladder every choice walks: this "
+            "run's pick > the default > discovery."
+        ),
+        "converter_default_badge": "default",
+        "converter_make_default": "Set default",
+        "converter_clear_default": "Unset",
+        "converter_clear_default_help": (
+            "Return to discovery: the converter that keeps the most evidence "
+            "for the given format goes first."
+        ),
+        "converter_accepts": "reads: {formats}",
         "sheet_read_path": "Reading path",
         "sheet_read_path_help": (
             "How this workbook is read. The direct read opens the file itself "
@@ -78,12 +93,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "it exists so the choice is yours, with the cost in view."
         ),
         "sheet_read_native": (
-            "Direct read — cells, merges, charts and images, with coordinates "
-            "(no converter)"
+            "Direct read (dokey built-in, standard library) — cells, merges, "
+            "charts and images, with coordinates; no converter"
         ),
         "sheet_read_native_legacy": (
-            "Direct read via xlrd — cells, types and merges (converters cannot "
-            "open this format)"
+            "Direct read (dokey built-in, via xlrd) — cells, types and merges; "
+            "converters cannot open this format"
         ),
         "sheet_read_converter": (
             "{kind} — sheets rendered as tables; coordinates, merges and "
@@ -376,6 +391,21 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "여기서 실행합니다."
         ),
         "converters_discovered": "이 컴퓨터의 변환기: {list}",
+        "converter_backend": "변환기 (bring your own)",
+        "converter_panel_caption": (
+            "dokey는 변환기를 동봉하지 않습니다 — PATH나 인터프리터에서 발견된 "
+            "것을 증거가 풍부한 순으로 제공합니다. 기본값 지정은 모든 선택이 "
+            "거치는 사다리의 가운데 단을 채웁니다: 이번 실행의 선택 > 기본값 > "
+            "발견 순서."
+        ),
+        "converter_default_badge": "기본값",
+        "converter_make_default": "기본값으로",
+        "converter_clear_default": "해제",
+        "converter_clear_default_help": (
+            "발견 순서로 돌아갑니다: 해당 형식의 증거를 가장 많이 보존하는 "
+            "변환기가 앞섭니다."
+        ),
+        "converter_accepts": "읽는 형식: {formats}",
         "sheet_read_path": "읽기 경로",
         "sheet_read_path_help": (
             "이 워크북을 어떻게 읽을지 정합니다. 직독은 파일 자체를 열어 "
@@ -385,10 +415,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "비용이 보이는 곳에서 하도록 두 경로를 나란히 둡니다."
         ),
         "sheet_read_native": (
-            "직독 — 셀·병합·차트·그림을 좌표와 함께 (변환기 없음)"
+            "직독(dokey 내장·표준 라이브러리) — 셀·병합·차트·그림을 좌표와 "
+            "함께; 변환기 없음"
         ),
         "sheet_read_native_legacy": (
-            "직독(xlrd) — 셀·타입·병합 (변환기는 이 형식을 열지 못합니다)"
+            "직독(dokey 내장, xlrd 사용) — 셀·타입·병합; 변환기는 이 형식을 "
+            "열지 못합니다"
         ),
         "sheet_read_converter": (
             "{kind} — 시트를 표로 렌더; 좌표·병합·차트는 소실"

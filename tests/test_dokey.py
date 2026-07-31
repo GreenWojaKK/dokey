@@ -984,6 +984,49 @@ class UiIngestPanelTests(unittest.TestCase):
                 else:
                     os.environ["DOKEY_CONFIG_DIR"] = previous_config
 
+    def test_the_converter_panel_lists_and_sets_the_default(self) -> None:
+        from dokey import converters
+
+        if not converters.discover():
+            self.skipTest("no converter on this machine to list")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            previous_cwd = Path.cwd()
+            previous_config = os.environ.get("DOKEY_CONFIG_DIR")
+            os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
+            os.chdir(tmp_path)
+            try:
+                app = self._app(tmp_path).run()
+                self.assertFalse(app.exception)
+                use_keys = sorted(
+                    widget.key
+                    for widget in app.button
+                    if str(widget.key).startswith("conv_use_")
+                )
+                # Every discovered converter stands in the panel, none saved
+                # yet, so each offers to become the default.
+                self.assertTrue(use_keys)
+                self.assertIsNone(convertlib.load_converter())
+
+                app.button(key=use_keys[0]).click().run()
+                saved = convertlib.load_converter()
+                self.assertIsNotNone(saved)
+                self.assertEqual(f"conv_use_{saved.kind}", use_keys[0])
+                # The saved one now wears the default badge and offers to
+                # step down instead.
+                self.assertIn(
+                    "conv_clear", {widget.key for widget in app.button}
+                )
+
+                app.button(key="conv_clear").click().run()
+                self.assertIsNone(convertlib.load_converter())
+            finally:
+                os.chdir(previous_cwd)
+                if previous_config is None:
+                    os.environ.pop("DOKEY_CONFIG_DIR", None)
+                else:
+                    os.environ["DOKEY_CONFIG_DIR"] = previous_config
+
     def test_a_flow_document_routes_to_the_flow_form(self) -> None:
         from dokey import pickers
 

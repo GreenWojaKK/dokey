@@ -455,6 +455,67 @@ def backend_panel() -> None:
         st.caption(t("backend_caption"))
 
 
+def converter_panel() -> None:
+    """Every document converter on this machine, in one place.
+
+    The same bring-your-own panel the OCR backend has: dokey ships no
+    converter, shows what it discovered on PATH and in the interpreter, and
+    lets the reader make one the default. The default fills the *setting*
+    rung of the resolution ladder (flag > setting > discovery); with none
+    set, discovery order is evidence order -- the converter that keeps more
+    goes first. Each entry says what it keeps and which formats it is
+    offered for, so comparing tools does not require running them.
+    """
+    with st.expander(
+        t("converter_backend"), expanded=False, icon=":material/sync_alt:"
+    ):
+        saved = convertlib.load_converter()
+        entries: list[tuple[object, bool]] = []
+        seen: set[str] = set()
+        for converter, is_saved in (
+            ([(saved, True)] if saved else [])
+            + [(found, False) for found in converterslib.discover()]
+        ):
+            if converter.kind in seen:
+                continue
+            seen.add(converter.kind)
+            entries.append((converter, is_saved))
+        if not entries:
+            st.caption(t("converter_offline"))
+            st.caption(t("converter_panel_caption"))
+            return
+        for converter, is_saved in entries:
+            info, action = st.columns([3, 1], vertical_alignment="center")
+            badge = f" · **{t('converter_default_badge')}**" if is_saved else ""
+            info.markdown(
+                f"**{converter.kind}** — "
+                f"{converterslib.yields_label(converter.kind)}{badge}"
+            )
+            info.caption(converter.display())
+            info.caption(
+                t(
+                    "converter_accepts",
+                    formats=" ".join(
+                        sorted(converterslib.accepted_suffixes(converter.kind))
+                    ),
+                )
+            )
+            if is_saved:
+                if action.button(
+                    t("converter_clear_default"),
+                    key="conv_clear",
+                    help=t("converter_clear_default_help"),
+                ):
+                    convertlib.save_converter(None)
+                    st.rerun()
+            elif action.button(
+                t("converter_make_default"), key=f"conv_use_{converter.kind}"
+            ):
+                convertlib.save_converter(converter)
+                st.rerun()
+        st.caption(t("converter_panel_caption"))
+
+
 def import_open() -> bool:
     return bool(st.session_state.get("_import_open"))
 
@@ -1525,6 +1586,7 @@ def sidebar() -> tuple[Path | None, int]:
     # they opened, and the top of a navigation column is worth more than a badge.
     lake = pick_lake(lake_from_argv())
     import_control(lake)
+    converter_panel()
     backend_panel()
     with st.expander(
         t("appearance"), expanded=False, icon=":material/translate:"

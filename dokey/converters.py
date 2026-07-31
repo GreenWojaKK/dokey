@@ -80,6 +80,11 @@ def accepts(kind: str, suffix: str) -> bool:
     return suffix.lower() in _ACCEPTS.get(kind, _ACCEPTS["custom"])
 
 
+def accepted_suffixes(kind: str) -> frozenset[str]:
+    """Which formats this kind of converter is offered for."""
+    return _ACCEPTS.get(kind, _ACCEPTS["custom"])
+
+
 def yields_label(kind: str) -> str:
     """How much survives this converter, in words a form can show."""
     return (

@@ -46,7 +46,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["dokey", "dokey.profiles", "dokey.ui"]
+packages = ["dokey", "dokey.commands", "dokey.profiles", "dokey.ui"]
 
 [tool.setuptools.package-data]
 dokey = ["assets/*"]

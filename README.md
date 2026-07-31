@@ -479,10 +479,16 @@ format itself states**:
 - A **self-describing** format (`xlsx`, `xls`) never reaches a converter at
   all: dokey reads the file itself.
 
-Discovery mirrors every other BYO seam: whatever is on PATH or importable is
-offered, richest evidence first; a converter saved with `dokey convert --set`
-is an instruction and wins — though the evidence verdict still travels with
-it. `dokey convert` with no input lists everything found and what each keeps.
+Discovery mirrors every other BYO seam, and so does the resolution ladder:
+**flag > saved setting > discovery**. `--converter markitdown` (a name, or a
+full command) picks the tool for one run — measured on the same docx, 2.9 s
+against docling's 19.6 s — while `dokey convert --set` saves the choice, and
+with neither dokey takes the richest evidence it finds. The app's flow form
+offers the same pick as a dropdown, each entry labelled with what it keeps.
+The verdict travels with every choice: an instruction that cannot serve (a
+scan through a markdown-only tool) is refused in so many words, not silently
+replaced. `dokey convert` with no input lists everything found and what each
+keeps.
 Each ingest records which converter produced the render (`converted_by` in
 `bronze/md_ingest.json`), the way a table records what proved its header. A
 scanned PDF still requires a converter that reconstructs pages: a

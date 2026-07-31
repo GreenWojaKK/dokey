@@ -152,6 +152,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     auto.add_argument(
+        "--converter",
+        default=None,
+        help=(
+            "Which converter to use for this run: a name (docling, markitdown) "
+            "or a full command. This run's counterpart of `dokey convert "
+            "--set`; the flag outranks the saved setting and discovery. "
+            "Default: the saved converter, else the richest-evidence one found."
+        ),
+    )
+    auto.add_argument(
         "--section-overlap",
         type=int,
         default=None,
@@ -184,6 +194,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         nargs="?",
         help="Document to convert (PDF, DOCX, PPTX, HTML, image...).",
+    )
+    convert.add_argument(
+        "--converter",
+        default=None,
+        help=(
+            "Which converter to use for this run: a name (docling, markitdown) "
+            "or a full command. Unlike --set, nothing is saved."
+        ),
     )
     convert.add_argument(
         "--set",
@@ -336,6 +354,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Create raw, bronze, silver, and artifact outputs from a PDF and TOC.",
     )
     split.add_argument("--input", type=Path, required=True, help="Input PDF path.")
+    split.add_argument(
+        "--converter",
+        default=None,
+        help=(
+            "Which converter to use for this run: a name (docling, markitdown) "
+            "or a full command. Outranks the saved setting and discovery."
+        ),
+    )
     split.add_argument("--toc", type=Path, help="TOC CSV or text path.")
     split.add_argument(
         "--toc-from-outline",
@@ -1048,7 +1074,11 @@ def run_auto(args: argparse.Namespace) -> None:
             # A scanned page has nothing but its image, so this branch needs
             # a converter that reconstructs pages -- a markdown-only tool
             # would read the empty text layer and return silence.
-            choice = converterslib.choose(input_pdf, require_blocks=True)
+            choice = converterslib.choose(
+                input_pdf,
+                require_blocks=True,
+                prefer=getattr(args, "converter", None),
+            )
             converter, source = (
                 (choice.converter, choice.source) if choice else (None, "none")
             )
@@ -1672,7 +1702,11 @@ def run_sheet_ingest(args: argparse.Namespace) -> None:
     if blocks is None:
         # Sheet identity travels in the block stream, so this fallback needs
         # a converter that yields one.
-        choice = converterslib.choose(input_path, require_blocks=True)
+        choice = converterslib.choose(
+            input_path,
+            require_blocks=True,
+            prefer=getattr(args, "converter", None),
+        )
         if choice is None:
             raise SystemExit(convertlib.install_hint())
         converter = choice.converter
@@ -1763,7 +1797,9 @@ def run_flow_ingest(args: argparse.Namespace) -> None:
         raise SystemExit(f"Document not found: {input_path}")
     output_dir = getattr(args, "output_dir", None) or _default_lake_dir(input_path)
 
-    choice = converterslib.choose(input_path)
+    choice = converterslib.choose(
+        input_path, prefer=getattr(args, "converter", None)
+    )
     if choice is None:
         raise SystemExit(converterslib.flow_install_hint())
     print(f"{input_path.name}: converting with {choice.display()}")
@@ -1950,7 +1986,9 @@ def run_convert(args: argparse.Namespace) -> None:
     input_path = args.input
     if not input_path.is_file():
         raise SystemExit(f"File not found: {input_path}")
-    choice = converterslib.choose(input_path)
+    choice = converterslib.choose(
+        input_path, prefer=getattr(args, "converter", None)
+    )
     if choice is None:
         raise SystemExit(
             converterslib.flow_install_hint()

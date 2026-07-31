@@ -2025,6 +2025,72 @@ class ConverterRegistryTests(unittest.TestCase):
             )
         )
 
+    def test_the_flag_outranks_the_saved_setting_and_discovery(self) -> None:
+        from dokey import converters
+
+        # The ladder every dokey seam uses: flag > setting > discovery. A
+        # per-run instruction picks markitdown even with docling saved and
+        # discovered -- and the evidence verdict still travels with it.
+        choice = converters.choose(
+            Path("book.pdf"),
+            prefer="markitdown",
+            candidates=[
+                ("config", self._conv("docling")),
+                ("discovered", self._conv("docling")),
+                ("discovered", self._conv("markitdown")),
+            ],
+        )
+        self.assertEqual(choice.converter.kind, "markitdown")
+        self.assertEqual(choice.source, "flag")
+        self.assertTrue(choice.degraded)
+
+    def test_a_preferred_name_resolves_to_the_saved_build_first(self) -> None:
+        from dokey import converters
+
+        # Naming a kind picks the saved converter of that kind when there is
+        # one: the setting may point at a particular build of the tool.
+        saved = convertlib.Converter(("C:/tools/markitdown.exe",), "markitdown")
+        choice = converters.choose(
+            Path("보고서.docx"),
+            prefer="markitdown",
+            candidates=[
+                ("config", saved),
+                ("discovered", self._conv("markitdown")),
+            ],
+        )
+        self.assertEqual(choice.converter.argv, ("C:/tools/markitdown.exe",))
+
+    def test_an_instruction_that_cannot_serve_is_refused_not_replaced(self) -> None:
+        from dokey import converters
+
+        # A scan needs the block stream; markdown-only tools have none. Doing
+        # something other than what was asked is worse than stopping.
+        with self.assertRaises(SystemExit) as caught:
+            converters.choose(
+                Path("scan.pdf"),
+                prefer="markitdown",
+                require_blocks=True,
+                candidates=[
+                    ("discovered", self._conv("markitdown")),
+                    ("discovered", self._conv("docling")),
+                ],
+            )
+        self.assertIn("markdown only", str(caught.exception))
+        with self.assertRaises(SystemExit) as caught:
+            converters.choose(
+                Path("book.pdf"), prefer="markitdown", candidates=[]
+            )
+        self.assertIn("markitdown", str(caught.exception))
+
+    def test_a_preference_that_is_not_a_name_is_read_as_a_command(self) -> None:
+        from dokey import converters
+
+        choice = converters.choose(
+            Path("보고서.docx"), prefer="mytool --fast", candidates=[]
+        )
+        self.assertEqual(choice.converter.argv, ("mytool", "--fast"))
+        self.assertEqual(choice.converter.kind, "custom")
+
     def test_markitdown_speaks_its_own_grammar(self) -> None:
         converter = convertlib.Converter(("markitdown",), "markitdown")
         command = convertlib.build_command(
@@ -2106,6 +2172,38 @@ class ConverterRegistryTests(unittest.TestCase):
         self.assertIn("converted by", report)
         report = self._flow_e2e("markitdown", "markitdown")
         self.assertIn("markdown only", report)
+
+    def test_the_converter_flag_reaches_the_flow_route(self) -> None:
+        # `--converter markitdown` picks the saved markitdown build for this
+        # run, through the CLI surface a user actually touches.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            previous = os.environ.get("DOKEY_CONFIG_DIR")
+            os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
+            try:
+                script = self._flow_stub(tmp_path, "markitdown")
+                convertlib.save_converter(
+                    convertlib.Converter((sys.executable, str(script)), "markitdown")
+                )
+                source = tmp_path / "보고서.docx"
+                source.write_bytes(b"stub")
+                lake = tmp_path / "lake"
+                main(
+                    [
+                        "auto", str(source),
+                        "--converter", "markitdown",
+                        "--output-dir", str(lake),
+                    ]
+                )
+                report = (lake / "bronze" / "md_ingest.json").read_text(
+                    encoding="utf-8"
+                )
+                self.assertIn("markdown only", report)
+            finally:
+                if previous is None:
+                    os.environ.pop("DOKEY_CONFIG_DIR", None)
+                else:
+                    os.environ["DOKEY_CONFIG_DIR"] = previous
 
 
 class BackendTests(unittest.TestCase):

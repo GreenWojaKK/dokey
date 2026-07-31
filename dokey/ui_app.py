@@ -954,11 +954,30 @@ def _flow_ingest_form(upload) -> None:
     enough, and the form says which one will run.
     """
     st.caption(t("flow_input_caption"))
-    choice = converterslib.choose(Path(upload.name))
-    if choice is None:
+    # Every converter the machine offers, one entry per kind, the saved one
+    # first -- so the default the box shows is the same converter choose()
+    # would pick, and picking another is this run's instruction.
+    saved = convertlib.load_converter()
+    offered: list = []
+    seen: set[str] = set()
+    for converter in ([saved] if saved else []) + converterslib.discover():
+        if converter.kind in seen:
+            continue
+        seen.add(converter.kind)
+        offered.append(converter)
+    if not offered:
         st.warning(t("flow_converter_offline"))
+        selected = None
     else:
-        st.caption(t("flow_converter_online", converter=choice.display()))
+        selected = st.selectbox(
+            t("flow_converter_choice"),
+            offered,
+            format_func=lambda conv: (
+                f"{conv.kind} — {converterslib.yields_label(conv.kind)}"
+            ),
+            key="flow_converter",
+            help=t("flow_converter_choice_help"),
+        )
     essentials = st.columns(3)
     with essentials[0]:
         lake_name = st.text_input(
@@ -969,8 +988,10 @@ def _flow_ingest_form(upload) -> None:
     with essentials[2]:
         profile = _language_profile_input("flow_profile")
     write_items = _write_items_input("flow_items")
-    if _run_button("flow_run", disabled=choice is None):
-        run_flow_ingest_ui(upload, lake_name, depth, profile, write_items)
+    if _run_button("flow_run", disabled=selected is None):
+        run_flow_ingest_ui(
+            upload, lake_name, depth, profile, write_items, selected.kind
+        )
 
 
 def run_flow_ingest_ui(
@@ -979,6 +1000,7 @@ def run_flow_ingest_ui(
     section_depth: str = "auto",
     profile: str = "auto",
     write_items: bool = True,
+    converter: str | None = None,
 ) -> None:
     """Save the document, run the exact CLI flow-ingest path, open the lake."""
     work = Path(tempfile.mkdtemp(prefix="dokey_ui_flow_"))
@@ -993,6 +1015,7 @@ def run_flow_ingest_ui(
         section_depth=section_depth,
         profile=profile,
         no_items=not write_items,
+        converter=converter,  # the form's pick is this run's instruction
     )
 
     log = io.StringIO()

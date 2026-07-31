@@ -77,7 +77,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "The source states no pages — pagination is a rendering artifact — "
             "so a markdown-only converter loses nothing structural."
         ),
-        "flow_converter_online": "Converter: {converter}",
+        "flow_converter_choice": "Converter",
+        "flow_converter_choice_help": (
+            "Which tool converts this document, for this run only. A "
+            "markdown-only converter is fully adequate here — the source "
+            "states no pages — and is usually much faster; one that also "
+            "keeps a block stream can only know more."
+        ),
         "flow_converter_offline": (
             "No converter found for this format. The light option is enough: "
             "`pip install markitdown[docx,pptx]` — or `pip install docling`, "
@@ -367,7 +373,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "원본에 지면이 없으므로(쪽 매김은 조판 산물) 마크다운만 내는 "
             "변환기로도 구조가 유실되지 않습니다."
         ),
-        "flow_converter_online": "변환기: {converter}",
+        "flow_converter_choice": "변환기",
+        "flow_converter_choice_help": (
+            "이 문서를 어떤 도구로 변환할지, 이번 실행에 한한 선택입니다. "
+            "원본에 지면이 없으므로 마크다운만 내는 변환기로도 충분하고 대개 "
+            "훨씬 빠릅니다. 블록 열까지 내는 쪽은 더 많이 알 뿐입니다."
+        ),
         "flow_converter_offline": (
             "이 형식을 받을 변환기가 없습니다. 경량으로 충분합니다: "
             "`pip install markitdown[docx,pptx]` — 또는 PDF의 지면 증거까지 "

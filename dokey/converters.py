@@ -126,27 +126,77 @@ class Choice:
         return f"{self.converter.display()} ({self.source}; {yields_label(self.converter.kind)})"
 
 
+def _pool(
+    candidates: list[tuple[str, convertlib.Converter]] | None,
+) -> list[tuple[str, convertlib.Converter]]:
+    if candidates is not None:
+        return candidates
+    pool: list[tuple[str, convertlib.Converter]] = []
+    saved = convertlib.load_converter()
+    if saved is not None:
+        pool.append(("config", saved))
+    pool.extend(("discovered", found) for found in discover())
+    return pool
+
+
+def _by_preference(
+    prefer: str, pool: list[tuple[str, convertlib.Converter]]
+) -> convertlib.Converter | None:
+    """The converter a name or a command points at.
+
+    A known kind name (``markitdown``, ``docling``) picks that converter from
+    what the machine offers -- the saved one first, since it may be a
+    particular build of that kind. Anything else is read as a command, the
+    same way ``--set`` reads one.
+    """
+    if prefer in _YIELDS:
+        for _source, converter in pool:
+            if converter.kind == prefer:
+                return converter
+        return None
+    return convertlib.converter_from_command(prefer)
+
+
 def choose(
     input_path: Path,
     *,
     require_blocks: bool = False,
+    prefer: str | None = None,
     candidates: list[tuple[str, convertlib.Converter]] | None = None,
 ) -> Choice | None:
-    """The converter for this input, by instruction first and evidence second.
+    """The converter for this input: flag, then saved setting, then evidence.
 
-    A saved converter is an instruction and wins whenever it accepts the
-    format at all -- but not when the caller *requires* the block stream (a
-    scanned page has nothing else to offer) and the instruction cannot yield
-    one. Among discovered converters the order is evidence order.
+    The ladder is the one every dokey seam uses. ``prefer`` is this run's
+    instruction and outranks everything -- but an instruction that cannot
+    satisfy the caller (a scan needs the block stream; markdown-only tools
+    have none) is refused in so many words rather than silently replaced,
+    because doing something other than what was asked is worse than stopping.
+    A saved converter wins next, whenever it accepts the format at all. Among
+    discovered converters the order is evidence order.
     """
     suffix = input_path.suffix.lower()
-    if candidates is None:
-        candidates = []
-        saved = convertlib.load_converter()
-        if saved is not None:
-            candidates.append(("config", saved))
-        candidates.extend(("discovered", found) for found in discover())
-    for source, converter in candidates:
+    pool = _pool(candidates)
+    if prefer:
+        converter = _by_preference(prefer, pool)
+        if converter is None:
+            raise SystemExit(
+                f"Converter not found on this machine: {prefer}\n"
+                "Install it, or name a full command instead."
+            )
+        yields = adapter_yields(converter.kind)
+        if require_blocks and "blocks" not in yields:
+            raise SystemExit(
+                f"{prefer} yields markdown only, and this input needs the "
+                "block stream (a scanned page has nothing else to offer). "
+                "Use docling here."
+            )
+        return Choice(
+            converter=converter,
+            source="flag",
+            yields=yields,
+            degraded=suffix in PAGED_SUFFIXES and "blocks" not in yields,
+        )
+    for source, converter in pool:
         if not accepts(converter.kind, suffix):
             continue
         yields = adapter_yields(converter.kind)

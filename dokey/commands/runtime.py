@@ -62,6 +62,9 @@ def _streamlit_command() -> list[str]:
 
 def run_streamlit(arguments: list[str]) -> None:
     """Become Streamlit: the frozen build's stand-in for ``-m streamlit``."""
+    # A frozen bundle carries no package metadata, so Streamlit mistakes
+    # itself for a development checkout and then refuses --server.port.
+    os.environ.setdefault("STREAMLIT_GLOBAL_DEVELOPMENT_MODE", "false")
     from streamlit.web import cli as streamlit_cli
 
     sys.argv = ["streamlit", *arguments]

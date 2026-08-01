@@ -196,15 +196,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "being substituted."
         ),
         "advanced_overrides": "Advanced overrides (optional)",
-        "toc_file_optional": "TOC file (optional)",
-        "toc_file_optional_help": (
-            "Followed as given — CSV (level,title,page) or indented text. "
-            "Left empty, the outline, the printed contents page, and the "
-            "body headings are read and cross-checked instead. Either way "
-            "every section start is verified against the document, and each "
-            "boundary page is shared only where the break falls mid-page."
-        ),
-        "recover_printed": "Recover printed page numbers (TOC)",
         "library_name_optional": "Library name (optional)",
         "run_ingest": "Add to library",
         "no_library": (
@@ -461,15 +452,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "대체하지 않고 실패를 알립니다."
         ),
         "advanced_overrides": "고급 설정 (선택 사항)",
-        "toc_file_optional": "목차 파일 (선택 사항)",
-        "toc_file_optional_help": (
-            "주면 그대로 따릅니다 — CSV(레벨,제목,쪽) 또는 들여쓴 텍스트. "
-            "비워 두면 책갈피·인쇄된 목차 페이지·본문 표제를 차례로 읽어 "
-            "교차검증합니다. 어느 쪽이든 절마다 시작 페이지를 문서에서 "
-            "확인하고, 경계 페이지는 절이 페이지 중간에서 갈릴 때만 양쪽에 "
-            "포함합니다."
-        ),
-        "recover_printed": "책에 인쇄된 페이지 번호 복원",
         "library_name_optional": "라이브러리 이름 (선택 사항)",
         "run_ingest": "라이브러리에 추가",
         "no_library": (

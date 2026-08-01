@@ -1195,12 +1195,14 @@ class UiIngestPanelTests(unittest.TestCase):
                 else:
                     os.environ["DOKEY_CONFIG_DIR"] = previous_config
 
-    def test_a_toc_file_is_an_input_of_the_one_form_not_a_mode(self) -> None:
-        """The one thing manual mode had that auto lacked was a TOC file.
+    def test_the_pdf_form_keeps_no_control_the_pipeline_answers_itself(
+        self,
+    ) -> None:
+        """No mode switch, no TOC source, no offset, no recovery toggle.
 
-        It is now an optional field of the single form, followed as given --
-        while the offset, the verification, and the boundary overlap are
-        still read from the document. No mode switch remains.
+        The TOC is read from the document (a file is a CLI escape hatch),
+        and the printed page numbers are always recovered -- a document that
+        defeats the recovery warns and stands, so there is nothing to ask.
         """
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -1214,6 +1216,7 @@ class UiIngestPanelTests(unittest.TestCase):
                 self.assertNotIn("ing_mode", {w.key for w in app.radio})
                 self.assertNotIn("ing_toc_source", {w.key for w in app.radio})
                 self.assertNotIn("ing_offset", {w.key for w in app.number_input})
+                self.assertNotIn("auto_recover", {w.key for w in app.checkbox})
             finally:
                 os.chdir(previous_cwd)
                 if previous_config is None:

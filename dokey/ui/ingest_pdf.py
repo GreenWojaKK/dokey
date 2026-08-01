@@ -27,28 +27,23 @@ from dokey.ui.preview import _offer_preview
 
 def run_ingest_auto_ui(
     pdf_upload,
-    toc_upload,
-    recover_folios: bool,
     lake_name: str,
     reader: str | None = None,
     section_depth: str = "auto",
     profile: str = "auto",
     write_items: bool = True,
 ) -> None:
-    """Save the staged inputs and run the sequential ingest workflow.
+    """Save the staged PDF and run the sequential ingest workflow.
 
     ``reader`` maps onto the CLI's two knobs: None lets dokey read first and
     hand page images to a converter, "dokey" forbids conversion, and a
-    converter kind converts with that tool as given.
+    converter kind converts with that tool as given. The printed page
+    numbers are always recovered afterwards; a document that defeats the
+    recovery says so in a warning and the ingest stands.
     """
     work = Path(tempfile.mkdtemp(prefix="dokey_ui_"))
     pdf_path = work / pdf_upload.name
     pdf_path.write_bytes(pdf_upload.getvalue())
-
-    toc_path = None
-    if toc_upload is not None:
-        toc_path = work / toc_upload.name
-        toc_path.write_bytes(toc_upload.getvalue())
 
     name = lake_name.strip() or Path(pdf_upload.name).stem
     out_dir = _project_output_dir(name)
@@ -68,7 +63,7 @@ def run_ingest_auto_ui(
         profile=profile,
         no_items=not write_items,
         page_offset=None,
-        toc=toc_path,
+        toc=None,
         toc_format="auto",
         toc_page=None,
         section_overlap=None,
@@ -83,22 +78,21 @@ def run_ingest_auto_ui(
             t("ingesting", name=pdf_upload.name)
         ), contextlib.redirect_stdout(log):
             dokey_cli.run_auto(auto_args)
-        if recover_folios:
-            folio_args = SimpleNamespace(
-                lake=out_dir,
-                pdf=None,
-                source="toc",
-                endpoint=None,
-                all_pages=False,
-                verify=8,
-                dpi=200,
-                rebuild=False,
-            )
-            try:
-                with st.spinner(t("recovering_pages")), contextlib.redirect_stdout(log):
-                    dokey_cli.run_folios(folio_args)
-            except SystemExit as exc:
-                st.warning(t("skipped_page_recovery", error=exc))
+        folio_args = SimpleNamespace(
+            lake=out_dir,
+            pdf=None,
+            source="toc",
+            endpoint=None,
+            all_pages=False,
+            verify=8,
+            dpi=200,
+            rebuild=False,
+        )
+        try:
+            with st.spinner(t("recovering_pages")), contextlib.redirect_stdout(log):
+                dokey_cli.run_folios(folio_args)
+        except SystemExit as exc:
+            st.warning(t("skipped_page_recovery", error=exc))
     except SystemExit as exc:
         _report_failure("ingest_failed", exc, log)
         return
@@ -132,11 +126,10 @@ def _reader_options() -> list[tuple[str | None, str]]:
 def _pdf_ingest_form(pdf_upload) -> None:
     """Render the one PDF form: everything else is read from the document.
 
-    The table of contents, the page offset, and each boundary's overlap are
-    resolved sequentially and cross-checked against the document itself, so
-    the form asks only what no document can state: which reader, what to call
-    the library, how deep to cut, and an optional TOC file that is followed
-    as given.
+    The table of contents, the page offset, each boundary's overlap, and the
+    printed page numbers are resolved sequentially and cross-checked against
+    the document itself, so the form asks only what no document can state:
+    which reader, what to call the library, and how deep to cut.
     """
     reader = st.selectbox(
         t("pdf_reader"),
@@ -154,25 +147,12 @@ def _pdf_ingest_form(pdf_upload) -> None:
         depth = _section_depth_input("auto_depth")
     with essentials[2]:
         profile = _language_profile_input("auto_profile")
-    toc_column, _spacer = st.columns([2, 3])
-    toc_upload = toc_column.file_uploader(
-        t("toc_file_optional"),
-        type=["csv", "txt"],
-        key="auto_toc",
-        help=t("toc_file_optional_help"),
-    )
-    switches = st.columns(3)
-    with switches[0]:
-        recover = st.checkbox(t("recover_printed"), value=True, key="auto_recover")
-    with switches[1]:
-        write_items = _write_items_input("auto_items")
+    write_items = _write_items_input("auto_items")
     if pdf_upload is not None:
         _offer_preview("pdf", pdf_upload, depth, profile)
     if _run_button("auto_run", disabled=pdf_upload is None):
         run_ingest_auto_ui(
             pdf_upload,
-            toc_upload,
-            recover,
             lake_name,
             reader,
             depth,

@@ -6,15 +6,20 @@ from pathlib import Path
 
 try:
     from pypdf import PdfReader, PdfWriter
-except ImportError:  # pragma: no cover - compatibility fallback
+except ImportError as pypdf_error:  # pragma: no cover - compatibility fallback
     try:
         from PyPDF2 import PdfReader, PdfWriter
     except ImportError as exc:  # pragma: no cover
+        # The pypdf failure is the interesting one: pypdf can be present and
+        # still fail to import (a broken optional backend, a frozen build
+        # missing a piece), and hiding that behind "install pypdf" once cost
+        # a debugging session. Say what actually went wrong.
         raise SystemExit(
             "Missing PDF dependency. Install one of these first:\n"
             "  pip install pypdf\n"
             "or\n"
-            "  pip install PyPDF2"
+            "  pip install PyPDF2\n"
+            f"(pypdf import failed with: {pypdf_error!r})"
         ) from exc
 
 from .models import SectionRange

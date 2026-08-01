@@ -48,6 +48,23 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     auto.add_argument(
+        "--toc",
+        type=Path,
+        default=None,
+        help=(
+            "TOC file (CSV: level,title,page — or indented text), followed as "
+            "given instead of reading the document's own sources. The page "
+            "offset, the per-section verification, and the boundary overlap "
+            "are still resolved from the document."
+        ),
+    )
+    auto.add_argument(
+        "--toc-format",
+        choices=("auto", "csv", "text"),
+        default="auto",
+        help="Format of --toc. Default: auto-detected.",
+    )
+    auto.add_argument(
         "--toc-page",
         type=int,
         action="append",

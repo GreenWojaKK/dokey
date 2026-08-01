@@ -151,10 +151,26 @@ def run_auto(args: argparse.Namespace) -> None:
                 "scan, `dokey convert` runs a BYO layout converter over it."
             )
 
+    # A given TOC file is an instruction and replaces the source cascade --
+    # but only the cascade. The offset prior, the smoke test, and the
+    # per-boundary overlap still run: the file says what the sections are,
+    # the document still says where they begin.
+    if getattr(args, "toc", None) is not None:
+        entries = read_toc(args.toc, getattr(args, "toc_format", "auto"))
+        print(f"TOC: {len(entries)} entries from the given file ({args.toc.name})")
+        return _ingest_resolved(
+            args,
+            reader,
+            input_pdf,
+            output_dir,
+            entries,
+            physical_pages=False,
+            has_fitz=has_fitz,
+        )
+
     # TOC source cascade, one implementation shared with the app's preview:
     # embedded outline, the book's own printed contents page, the document's
     # numbered headings, and OCR only when the text layer had nothing.
-    report: offsetlib.SmokeReport | None = None
     endpoint, _ = backendslib.resolve_endpoint(args.ocr_endpoint)
     found = tocsource.resolve(
         reader,
@@ -183,14 +199,44 @@ def run_auto(args: argparse.Namespace) -> None:
             "page with --toc-page N."
         )
     print(f"TOC: {len(entries)} entries from {found.label}")
+    return _ingest_resolved(
+        args,
+        reader,
+        input_pdf,
+        output_dir,
+        entries,
+        physical_pages=found.physical_pages,
+        has_fitz=has_fitz,
+    )
 
+
+def _ingest_resolved(
+    args: argparse.Namespace,
+    reader,
+    input_pdf: Path,
+    output_dir: Path,
+    entries,
+    *,
+    physical_pages: bool,
+    has_fitz: bool,
+) -> None:
+    """Resolve where the sections begin and end, then ingest.
+
+    The sequential tail every TOC source shares: the offset prior and the
+    smoke test locate each section's real start page, that same look at the
+    page settles each boundary's overlap, and the lake is written and
+    indexed. Nothing here asks; every guess is printed and overridable.
+    """
     # An entry whose page is already a physical PDF page needs no offset and no
     # smoke test: an outline's destination and a heading found in the body both
     # say where they are, where a printed contents page only says what the book
     # calls that place.
-    physical_pages = found.physical_pages
     if physical_pages:
         page_offset = 0 if args.page_offset is None else args.page_offset
+        if has_fitz and args.section_overlap is None:
+            # The smoke test never runs here, so the boundary evidence takes
+            # its own pass: one read of each section's start page.
+            entries = offsetlib.mark_clean_starts(input_pdf, entries)
 
     if not physical_pages:
         # A page offset prior: the flag if given, else the running folios,
@@ -251,29 +297,31 @@ def run_auto(args: argparse.Namespace) -> None:
                 listed += ", ..."
             print(f"  interpolated from neighbors: {listed}")
 
-    # Section overlap: the flag if given, else read from how the document
-    # breaks. A section that starts on a fresh page (clean break) needs no
-    # shared boundary page; one that starts mid-page needs overlap 1 to stay
-    # complete. The smoke test already read every start page, so the choice is
-    # free. Without a report (outline TOC, or too few sections located) the
-    # safe default 1 stands.
+    # Section overlap: the flag if given, else decided boundary by boundary
+    # from each section's own start page — already read by the smoke test (or
+    # the clean-start pass above). A heading that opens a fresh page shares
+    # nothing; a mid-page break keeps the shared page in both sections; a
+    # page that was never read stays shared, the safe side.
     if args.section_overlap is not None:
         section_overlap = args.section_overlap
         print(f"Section overlap: {section_overlap} (from --section-overlap)")
-    elif report is not None and report.clean_breaking is not None:
-        section_overlap = report.recommended_overlap()
-        style = (
-            "sections start on fresh pages"
-            if section_overlap == 0
-            else "section breaks fall mid-page"
-        )
-        print(
-            f"Section overlap: {section_overlap} "
-            f"({report.clean_starts}/{report.clean_sample} clean starts — {style})"
-        )
     else:
-        section_overlap = 1
-        print("Section overlap: 1 (default)")
+        section_overlap = None
+        sample = [
+            entry.clean_start for entry in entries if entry.clean_start is not None
+        ]
+        fresh = sum(1 for clean in sample if clean)
+        if sample:
+            print(
+                f"Section overlap: per boundary — {fresh}/{len(sample)} "
+                "sections open a fresh page; only mid-page breaks share "
+                "their page"
+            )
+        else:
+            print(
+                "Section overlap: per boundary (no start page read — "
+                "boundary pages shared)"
+            )
 
     ingest_entries(
         reader,

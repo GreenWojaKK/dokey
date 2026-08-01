@@ -512,10 +512,43 @@ def pin_section_starts(
             page=entry.page,
             parent=entry.parent,
             pdf_page=pin,
+            clean_start=check.clean_start,
         )
-        for entry, pin in zip(ordered, pins)
+        for entry, pin, check in zip(ordered, pins, checks)
     ]
     return pinned, SmokeReport(checks=tuple(checks))
+
+
+def mark_clean_starts(pdf_path: Path, entries: list[TocEntry]) -> list[TocEntry]:
+    """Read each section's start page and record whether it opens fresh.
+
+    Entries with physical pages (an embedded outline) skip the smoke test, so
+    this is the one look at the page that the per-boundary overlap needs: a
+    heading with body text above it means the previous section flows onto
+    this page and both must keep it. A page that cannot be read leaves None,
+    which the boundary treats as shared — the safe side.
+    """
+    fitz = _lazy_fitz()
+    marked: list[TocEntry] = []
+    with fitz.open(str(pdf_path)) as doc:
+        for entry in entries:
+            page_number = entry.pdf_page or entry.page
+            clean = (
+                _is_clean_start(doc[page_number - 1], entry.title)
+                if 1 <= page_number <= doc.page_count
+                else None
+            )
+            marked.append(
+                TocEntry(
+                    level=entry.level,
+                    title=entry.title,
+                    page=entry.page,
+                    parent=entry.parent,
+                    pdf_page=entry.pdf_page,
+                    clean_start=clean,
+                )
+            )
+    return marked
 
 
 def title_scan_offset(

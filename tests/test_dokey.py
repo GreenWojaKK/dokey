@@ -525,6 +525,33 @@ class SectionOverlapTests(unittest.TestCase):
         # the final section has no successor, so overlap does not extend it
         self.assertEqual(r[2].pdf_end_page, 30)
 
+    def test_each_boundary_reads_its_own_start_page(self) -> None:
+        entries = [
+            TocEntry(level=1, title="1.2 Pressure", page=15, parent="1"),
+            TocEntry(
+                level=1, title="1.3 Level", page=16, parent="1", clean_start=True
+            ),
+            TocEntry(
+                level=1, title="1.4 Flow", page=19, parent="1", clean_start=False
+            ),
+        ]
+        r = build_ranges(
+            entries, Path("out"), total_pdf_pages=30,
+            pdf_page_offset=0, max_content_page=None, section_overlap=None,
+        )
+        # 1.3 opens a fresh page: 1.2 leaves nothing on it, so no shared page.
+        self.assertEqual((r[0].pdf_start_page, r[0].pdf_end_page), (15, 15))
+        # 1.4 begins mid-page: 1.3's tail is there, so both keep page 19.
+        self.assertEqual((r[1].pdf_start_page, r[1].pdf_end_page), (16, 19))
+        self.assertEqual(r[2].pdf_end_page, 30)
+
+    def test_an_unread_boundary_stays_shared(self) -> None:
+        # No start page was ever read (no clean_start marks): the safe side
+        # is the old default -- every boundary page belongs to both sections.
+        r = self._ranges(None)
+        self.assertEqual((r[0].pdf_start_page, r[0].pdf_end_page), (15, 16))
+        self.assertEqual((r[1].pdf_start_page, r[1].pdf_end_page), (16, 19))
+
     def test_cli_default_overlap_is_one(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -855,7 +882,7 @@ class UiIngestPanelTests(unittest.TestCase):
                 self.assertFalse(app.exception)
                 sidebar_buttons = {widget.key for widget in app.sidebar.button}
                 self.assertNotIn("import_open", sidebar_buttons)
-                self.assertIn("ing_mode", {widget.key for widget in app.radio})
+                self.assertIn("pdf_reader", {widget.key for widget in app.selectbox})
             finally:
                 os.chdir(previous_cwd)
                 if previous_config is None:
@@ -880,12 +907,12 @@ class UiIngestPanelTests(unittest.TestCase):
             try:
                 app = self._app(tmp_path).run()
                 self.assertIn("import_open", {w.key for w in app.sidebar.button})
-                self.assertNotIn("ing_mode", {w.key for w in app.radio})
+                self.assertNotIn("pdf_reader", {w.key for w in app.selectbox})
 
                 app.button(key="import_open").click().run()
                 self.assertFalse(app.exception)
-                self.assertIn("ing_mode", {w.key for w in app.radio})
-                self.assertNotIn("ing_mode", {w.key for w in app.sidebar.radio})
+                self.assertIn("pdf_reader", {w.key for w in app.selectbox})
+                self.assertNotIn("pdf_reader", {w.key for w in app.sidebar.selectbox})
                 self.assertNotIn("auto_name", {w.key for w in app.sidebar.text_input})
                 self.assertIn("import_close", {w.key for w in app.sidebar.button})
             finally:
@@ -895,7 +922,16 @@ class UiIngestPanelTests(unittest.TestCase):
                 else:
                     os.environ["DOKEY_CONFIG_DIR"] = previous_config
 
-    def test_auto_is_the_default_mode_with_offset_override(self) -> None:
+    def test_the_pdf_form_asks_once_and_reads_the_rest_from_the_document(
+        self,
+    ) -> None:
+        """No mode switch, no page-offset field, no overlap knob, no expander.
+
+        The offset is voted and smoke-tested, the TOC sources cross-check
+        each other, and each boundary's overlap is read from the next
+        section's own start page -- so the form has nothing to ask about
+        them, and nothing to hide in an advanced drawer.
+        """
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             previous_cwd = Path.cwd()
@@ -905,12 +941,13 @@ class UiIngestPanelTests(unittest.TestCase):
             try:
                 app = self._importing(tmp_path)
                 self.assertFalse(app.exception)
-                # Auto is the default; no manual page-offset spinner is shown.
-                self.assertEqual(app.radio(key="ing_mode").value, "auto")
-                offset_keys = {widget.key for widget in app.text_input}
-                self.assertIn("auto_offset", offset_keys)
-                number_keys = {widget.key for widget in app.number_input}
-                self.assertNotIn("ing_offset", number_keys)
+                self.assertNotIn("ing_mode", {w.key for w in app.radio})
+                self.assertNotIn("auto_offset", {w.key for w in app.text_input})
+                self.assertNotIn("ing_offset", {w.key for w in app.number_input})
+                self.assertNotIn("auto_overlap", {w.key for w in app.selectbox})
+                reader = app.selectbox(key="pdf_reader")
+                self.assertIsNone(reader.value[0])  # auto: dokey, then converters
+                self.assertIn("auto_run", {w.key for w in app.button})
             finally:
                 os.chdir(previous_cwd)
                 if previous_config is None:
@@ -930,10 +967,14 @@ class UiIngestPanelTests(unittest.TestCase):
             try:
                 app = self._importing(tmp_path)
                 self.assertFalse(app.exception)
-                self.assertIn(
-                    "auto_convert", {widget.key for widget in app.selectbox}
-                )
-                self.assertEqual(app.selectbox(key="auto_convert").value, "auto")
+                selects = {widget.key for widget in app.selectbox}
+                self.assertIn("pdf_reader", selects)
+                # Discovery alone fills the reader list: auto first, dokey
+                # itself, then whatever converters this machine offers.
+                labels = [
+                    str(option) for option in app.selectbox(key="pdf_reader").options
+                ]
+                self.assertTrue(any("dokey" in label for label in labels), labels)
             finally:
                 os.chdir(previous_cwd)
                 if previous_config is None:
@@ -998,7 +1039,7 @@ class UiIngestPanelTests(unittest.TestCase):
                 # running headers.
                 self.assertIn("sheet_run", buttons)
                 self.assertNotIn("md_run", buttons)
-                self.assertNotIn("ing_mode", {w.key for w in app.radio})
+                self.assertNotIn("pdf_reader", {w.key for w in app.selectbox})
                 # The converter choice stands in the open: the direct read
                 # first, and every converter that can serve -- markitdown
                 # included, since its render keeps sheet names as headings.
@@ -1066,7 +1107,7 @@ class UiIngestPanelTests(unittest.TestCase):
                 buttons = {widget.key for widget in app.button}
                 self.assertIn("flow_run", buttons)
                 self.assertNotIn("md_run", buttons)
-                self.assertNotIn("ing_mode", {w.key for w in app.radio})
+                self.assertNotIn("pdf_reader", {w.key for w in app.selectbox})
             finally:
                 os.chdir(previous_cwd)
                 if previous_config is None:
@@ -1154,7 +1195,13 @@ class UiIngestPanelTests(unittest.TestCase):
                 else:
                     os.environ["DOKEY_CONFIG_DIR"] = previous_config
 
-    def test_manual_mode_reveals_toc_source_and_offset(self) -> None:
+    def test_a_toc_file_is_an_input_of_the_one_form_not_a_mode(self) -> None:
+        """The one thing manual mode had that auto lacked was a TOC file.
+
+        It is now an optional field of the single form, followed as given --
+        while the offset, the verification, and the boundary overlap are
+        still read from the document. No mode switch remains.
+        """
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             previous_cwd = Path.cwd()
@@ -1163,11 +1210,10 @@ class UiIngestPanelTests(unittest.TestCase):
             os.chdir(tmp_path)
             try:
                 app = self._importing(tmp_path)
-                app.radio(key="ing_mode").set_value("manual").run()
                 self.assertFalse(app.exception)
-                self.assertEqual(app.radio(key="ing_toc_source").value, "outline")
-                number_keys = {widget.key for widget in app.number_input}
-                self.assertIn("ing_offset", number_keys)
+                self.assertNotIn("ing_mode", {w.key for w in app.radio})
+                self.assertNotIn("ing_toc_source", {w.key for w in app.radio})
+                self.assertNotIn("ing_offset", {w.key for w in app.number_input})
             finally:
                 os.chdir(previous_cwd)
                 if previous_config is None:
@@ -1372,7 +1418,7 @@ class UiRerunCostTests(unittest.TestCase):
         making the offer out of bytes turned every click into a re-read of the
         book.
         """
-        staging = {"_offer_preview", "_staged_key", "_md_ingest_form", "_auto_ingest_form"}
+        staging = {"_offer_preview", "_staged_key", "_md_ingest_form", "_pdf_ingest_form"}
         ui_root = Path(__file__).resolve().parents[1] / "dokey" / "ui"
         found = set()
         for name in ("preview.py", "ingest.py", "ingest_pdf.py"):

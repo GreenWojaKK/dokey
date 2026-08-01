@@ -68,8 +68,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "No layout converter found — reading a workbook's tables needs one. "
             "`pip install docling` and dokey runs it from here, no setup."
         ),
-        "converters_discovered": "Readers on this machine: {list}",
-        "pdf_native_entry": "dokey — reads the text layer itself (pages kept)",
         "sheet_read_path": "Reader",
         "sheet_read_path_help": (
             "Who reads this workbook. The default is dokey itself, which "
@@ -111,16 +109,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "No converter found for this format. The light option is enough: "
             "`pip install markitdown[docx,pptx]` — or `pip install docling`, "
             "which also keeps page evidence for PDFs."
-        ),
-        "pdf_converter_choice": "Converter",
-        "pdf_converter_auto": "Auto — the one that keeps the most evidence",
-        "pdf_converter_choice_help": (
-            "Which tool converts this PDF when conversion happens at all — a "
-            "scanned original, or reading set to always convert. A PDF states "
-            "pages, so the automatic pick prefers a converter that keeps "
-            "them. A named one is followed as given, and when it cannot "
-            "serve — a markdown-only tool has nothing to read on a scan — "
-            "the run reports that instead of substituting."
         ),
         "sheet_xlrd_offline": (
             "Reading a legacy .xls needs xlrd (`pip install xlrd`) — or save "
@@ -193,65 +181,28 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "No HWP converter found. Install hwp2md, or set one from a terminal: "
             "`dokey hwp --set \"...\"`."
         ),
-        "converter_offline": (
-            "No layout converter found. Scanned pages have no text to read and "
-            "would index empty; `pip install docling` and dokey runs it from "
-            "here, no setup."
+        "pdf_reader": "Reader",
+        "pdf_reader_auto": (
+            "Auto — dokey reads the text layer; page images go to a "
+            "pages-keeping converter"
         ),
-        "read_method": "Reading the PDF",
-        "read_method_auto": "Automatic",
-        "read_method_never": "dokey — the text layer itself",
-        "read_method_always": "Layout converter",
-        "read_method_help": (
-            "Automatic lets dokey read the PDF's own text layer and hands it "
-            "to the layout converter only when the pages are images. Choose "
-            "the converter to reconstruct a layout the text layer gets wrong "
-            "(multi-column, tables) — slower, and it needs one installed."
-        ),
-        "ingest_mode": "Mode",
-        "ingest_mode_auto": "Auto (recommended)",
-        "ingest_mode_manual": "Manual",
-        "ingest_mode_help": (
-            "Auto reads the table of contents, the page offset, and the "
-            "section overlap from the document itself — just upload and add. "
-            "Manual exposes every control and accepts an external TOC file."
+        "pdf_reader_dokey": "dokey — reads the text layer itself (pages kept)",
+        "pdf_reader_help": (
+            "Who reads this PDF. Auto is sequential: dokey reads the text "
+            "layer first, and only pages that turn out to be images are "
+            "handed to a converter that keeps pages. A named reader is "
+            "followed as given, and one that cannot serve — a markdown-only "
+            "tool has nothing to read on a scan — reports that instead of "
+            "being substituted."
         ),
         "advanced_overrides": "Advanced overrides (optional)",
-        "overlap_auto": "Auto",
-        "page_offset_auto": "Page offset (blank = auto)",
-        "page_offset_auto_help": (
-            "PDF page = book page + N. Leave blank to estimate it from the "
-            "book's own running page numbers; set a value only to correct a "
-            "wrong guess."
-        ),
-        "section_overlap_auto_help": (
-            "Leave on Auto to pick 0 or 1 from how the document breaks: 0 when "
-            "sections start on a fresh page, 1 when a boundary falls mid-page."
-        ),
-        "toc_page_pin": "Contents page number (blank = auto)",
-        "toc_page_pin_help": (
-            "1-based PDF page(s) holding the printed table of contents, "
-            "comma-separated. Leave blank to detect it automatically."
-        ),
-        "invalid_number": "Enter a whole number, or leave it blank for auto.",
-        "toc_method": "Table of contents",
-        "toc_help": (
-            "Printed contents page reads the book's own contents page(s); "
-            "for a scanned book it falls back to the OCR backend."
-        ),
-        "toc_outline": "PDF outline",
-        "toc_file": "TOC file",
-        "toc_printed": "Printed contents page",
-        "toc_file_label": "TOC (CSV or text)",
-        "toc_format": "TOC format",
-        "format_auto": "Auto",
-        "format_csv": "CSV",
-        "format_text": "Text",
-        "page_offset": "Page offset (PDF page = book page + N)",
-        "section_overlap": "Section overlap (pages)",
-        "section_overlap_help": (
-            "Extend each section into the next by N pages so a section that "
-            "shares a boundary page stays complete. 1 is the default; 0 is strict."
+        "toc_file_optional": "TOC file (optional)",
+        "toc_file_optional_help": (
+            "Followed as given — CSV (level,title,page) or indented text. "
+            "Left empty, the outline, the printed contents page, and the "
+            "body headings are read and cross-checked instead. Either way "
+            "every section start is verified against the document, and each "
+            "boundary page is shared only where the break falls mid-page."
         ),
         "recover_printed": "Recover printed page numbers (TOC)",
         "library_name_optional": "Library name (optional)",
@@ -390,8 +341,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "필요합니다. `pip install docling`만 하면 별도 설정 없이 dokey가 "
             "여기서 실행합니다."
         ),
-        "converters_discovered": "이 컴퓨터의 읽기 도구: {list}",
-        "pdf_native_entry": "dokey — 텍스트 층 직접 읽기(지면 보존)",
         "sheet_read_path": "읽기 도구",
         "sheet_read_path_help": (
             "이 워크북을 누가 읽을지 정합니다. 기본은 dokey — 파일 자체를 "
@@ -429,15 +378,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "이 형식을 받을 변환기가 없습니다. 경량으로 충분합니다: "
             "`pip install markitdown[docx,pptx]` — 또는 PDF의 지면 증거까지 "
             "보존하는 `pip install docling`."
-        ),
-        "pdf_converter_choice": "변환기",
-        "pdf_converter_auto": "자동 — 증거를 가장 많이 남기는 것",
-        "pdf_converter_choice_help": (
-            "변환이 일어나는 경우(스캔 원본이거나 읽기 방식이 '항상 변환'일 "
-            "때) 이 PDF를 어떤 도구로 변환할지 정합니다. PDF는 지면을 "
-            "진술하므로 자동 선택은 지면을 보존하는 변환기를 우선합니다. "
-            "지정하면 그대로 따르되, 감당하지 못하는 경우(마크다운만 내는 "
-            "도구는 스캔에서 읽을 것이 없음) 대체하지 않고 실패를 알립니다."
         ),
         "sheet_xlrd_offline": (
             "구형 .xls를 읽으려면 xlrd가 필요합니다(`pip install xlrd`) — "
@@ -508,64 +448,26 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "HWP 변환기를 찾지 못했습니다. hwp2md를 설치하거나, 터미널에서 "
             "`dokey hwp --set \"...\"`로 지정하세요."
         ),
-        "converter_offline": (
-            "레이아웃 변환기를 찾지 못했습니다. 스캔 지면은 읽을 텍스트가 없어 "
-            "빈 채로 색인됩니다. `pip install docling`을 하면 별도 설정 없이 "
-            "dokey가 여기서 실행합니다."
+        "pdf_reader": "읽기 도구",
+        "pdf_reader_auto": (
+            "자동 — dokey가 직접 읽고, 지면이 이미지면 지면 보존 변환기로"
         ),
-        "read_method": "PDF 읽기 방식",
-        "read_method_auto": "자동",
-        "read_method_never": "dokey — 텍스트 층 직접 읽기",
-        "read_method_always": "레이아웃 변환기",
-        "read_method_help": (
-            "자동은 dokey가 PDF의 텍스트 층을 직접 읽고, 지면이 이미지일 "
-            "때만 레이아웃 변환기에 넘깁니다. 텍스트 층이 순서를 그르치는 "
-            "조판(다단·표)은 변환기를 직접 고르십시오 — 느리고, 변환기가 "
-            "설치돼 있어야 합니다."
-        ),
-        "ingest_mode": "인식 방식",
-        "ingest_mode_auto": "자동 (권장)",
-        "ingest_mode_manual": "직접 설정",
-        "ingest_mode_help": (
-            "자동은 목차, 페이지 보정값, 섹션 겹침을 문서에서 스스로 읽어냅니다. "
-            "업로드하고 추가만 하면 됩니다. 직접 설정은 모든 항목을 지정하며 "
-            "외부 목차 파일도 사용할 수 있습니다."
+        "pdf_reader_dokey": "dokey — 텍스트 층 직접 읽기(지면 보존)",
+        "pdf_reader_help": (
+            "이 PDF를 누가 읽을지 정합니다. 자동은 순차적입니다: dokey가 "
+            "텍스트 층을 먼저 읽고, 이미지로 판정된 지면만 지면을 보존하는 "
+            "변환기에 넘깁니다. 이름을 지정하면 그대로 따르되, 감당하지 "
+            "못하는 경우(마크다운만 내는 도구는 스캔에서 읽을 것이 없음) "
+            "대체하지 않고 실패를 알립니다."
         ),
         "advanced_overrides": "고급 설정 (선택 사항)",
-        "overlap_auto": "자동",
-        "page_offset_auto": "페이지 보정값 (비우면 자동)",
-        "page_offset_auto_help": (
-            "PDF 페이지 = 책 페이지 + N. 비워 두면 책에 인쇄된 페이지 번호에서 "
-            "자동으로 추정합니다. 추정이 틀렸을 때만 값을 지정하세요."
-        ),
-        "section_overlap_auto_help": (
-            "‘자동’으로 두면 문서의 단락 방식에 따라 0 또는 1을 고릅니다. "
-            "섹션이 새 페이지에서 시작하면 0, 페이지 중간에서 나뉘면 1입니다."
-        ),
-        "toc_page_pin": "목차 페이지 번호 (비우면 자동)",
-        "toc_page_pin_help": (
-            "인쇄된 목차가 있는 PDF 페이지 번호(1부터). 쉼표로 구분합니다. "
-            "비워 두면 자동으로 찾습니다."
-        ),
-        "invalid_number": "정수를 입력하거나, 자동으로 두려면 비워 두세요.",
-        "toc_method": "목차 인식 방법",
-        "toc_help": (
-            "‘인쇄된 목차 페이지’는 책 안의 목차를 직접 읽습니다. "
-            "스캔 PDF라면 연결된 OCR 서버를 사용합니다."
-        ),
-        "toc_outline": "PDF 책갈피",
-        "toc_file": "목차 파일",
-        "toc_printed": "인쇄된 목차 페이지",
-        "toc_file_label": "목차 파일 (CSV 또는 텍스트)",
-        "toc_format": "목차 파일 형식",
-        "format_auto": "자동",
-        "format_csv": "CSV",
-        "format_text": "텍스트",
-        "page_offset": "페이지 보정값 (PDF 페이지 = 책 페이지 + N)",
-        "section_overlap": "섹션 겹침 (페이지)",
-        "section_overlap_help": (
-            "섹션 경계가 한 페이지 안에 있을 때 내용이 잘리지 않도록 다음 섹션의 "
-            "페이지를 N장 포함합니다. 기본값은 1이며, 0이면 겹치지 않습니다."
+        "toc_file_optional": "목차 파일 (선택 사항)",
+        "toc_file_optional_help": (
+            "주면 그대로 따릅니다 — CSV(레벨,제목,쪽) 또는 들여쓴 텍스트. "
+            "비워 두면 책갈피·인쇄된 목차 페이지·본문 표제를 차례로 읽어 "
+            "교차검증합니다. 어느 쪽이든 절마다 시작 페이지를 문서에서 "
+            "확인하고, 경계 페이지는 절이 페이지 중간에서 갈릴 때만 양쪽에 "
+            "포함합니다."
         ),
         "recover_printed": "책에 인쇄된 페이지 번호 복원",
         "library_name_optional": "라이브러리 이름 (선택 사항)",

@@ -26,7 +26,7 @@ from dokey.ui.common import (
     _write_items_input,
     t,
 )
-from dokey.ui.ingest_pdf import _auto_ingest_form, _manual_ingest_form
+from dokey.ui.ingest_pdf import _pdf_ingest_form
 from dokey.ui.ingest_sheet import _sheet_ingest_form
 from dokey.ui.preview import _offer_preview
 
@@ -81,18 +81,7 @@ def _ingest_form_for(upload) -> None:
     if upload is not None and mdunit.is_markdown(Path(upload.name)):
         _md_ingest_form(upload)
         return
-    mode = st.radio(
-        t("ingest_mode"),
-        ["auto", "manual"],
-        format_func=lambda value: t(f"ingest_mode_{value}"),
-        key="ing_mode",
-        horizontal=True,
-        help=t("ingest_mode_help"),
-    )
-    if mode == "auto":
-        _auto_ingest_form(upload)
-    else:
-        _manual_ingest_form(upload)
+    _pdf_ingest_form(upload)
 
 
 DOCUMENT_TYPES = [

@@ -13,6 +13,10 @@ class TocEntry:
     # verification pass. When set it overrides page + offset, so a drifting
     # offset (plates, part dividers) cannot misplace the section.
     pdf_page: int | None = None
+    # Whether this section's heading opens a fresh page (no body text above
+    # it), read from the start page itself. Decides, boundary by boundary,
+    # whether the previous section keeps the shared page. None = not read.
+    clean_start: bool | None = None
 
 
 @dataclass(frozen=True)

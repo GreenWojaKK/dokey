@@ -42,7 +42,7 @@ def ingest_entries(
     output_dir: Path,
     page_offset: int,
     max_content_page: int | None,
-    section_overlap: int,
+    section_overlap: int | None,
     no_raw_copy: bool = False,
     no_page_text: bool = False,
     no_pdf_artifacts: bool = False,

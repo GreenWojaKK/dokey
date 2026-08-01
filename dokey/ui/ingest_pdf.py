@@ -211,7 +211,7 @@ def converter_status(offered=None) -> bool:
     if not offered:
         st.caption(t("converter_offline"))
         return False
-    entries = [
+    entries = [t("pdf_native_entry")] + [
         f"{converter.kind} \u2014 {converterslib.yields_label(converter.kind)}"
         for converter in offered
     ]

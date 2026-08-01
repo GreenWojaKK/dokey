@@ -68,22 +68,23 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "No layout converter found — reading a workbook's tables needs one. "
             "`pip install docling` and dokey runs it from here, no setup."
         ),
-        "converters_discovered": "Converters on this machine: {list}",
-        "sheet_read_path": "Converter",
+        "converters_discovered": "Readers on this machine: {list}",
+        "pdf_native_entry": "dokey — reads the text layer itself (pages kept)",
+        "sheet_read_path": "Reader",
         "sheet_read_path_help": (
-            "Whether a converter reads this workbook. The default is none: "
-            "dokey reads the file itself and keeps everything it states — "
-            "cells with coordinates, merges, charts with the ranges they "
-            "plot, images with their anchors. A converter renders sheets as "
-            "tables and keeps none of that."
+            "Who reads this workbook. The default is dokey itself, which "
+            "keeps everything the file states — cells with coordinates, "
+            "merges, charts with the ranges they plot, images with their "
+            "anchors. A converter renders sheets as tables and keeps none "
+            "of that."
         ),
         "sheet_read_native": (
-            "None — dokey reads the file itself (cells, merges, charts, "
-            "images, with coordinates)"
+            "dokey — reads the file itself (cells, merges, charts, images, "
+            "with coordinates)"
         ),
         "sheet_read_native_legacy": (
-            "None — dokey reads the file itself via xlrd (cells, types, "
-            "merges); converters cannot open this format"
+            "dokey — reads the file itself via xlrd (cells, types, merges); "
+            "converters cannot open this format"
         ),
         "sheet_read_converter": (
             "{kind} — sheets rendered as tables; coordinates, merges and "
@@ -199,12 +200,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "read_method": "Reading the PDF",
         "read_method_auto": "Automatic",
-        "read_method_never": "Text layer only",
+        "read_method_never": "dokey — the text layer itself",
         "read_method_always": "Layout converter",
         "read_method_help": (
-            "Automatic reads the PDF's own text layer and hands it to the "
-            "layout converter only when the pages are images. Choose the "
-            "converter to reconstruct a layout the text layer gets wrong "
+            "Automatic lets dokey read the PDF's own text layer and hands it "
+            "to the layout converter only when the pages are images. Choose "
+            "the converter to reconstruct a layout the text layer gets wrong "
             "(multi-column, tables) — slower, and it needs one installed."
         ),
         "ingest_mode": "Mode",
@@ -389,20 +390,21 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "필요합니다. `pip install docling`만 하면 별도 설정 없이 dokey가 "
             "여기서 실행합니다."
         ),
-        "converters_discovered": "이 컴퓨터의 변환기: {list}",
-        "sheet_read_path": "변환기",
+        "converters_discovered": "이 컴퓨터의 읽기 도구: {list}",
+        "pdf_native_entry": "dokey — 텍스트 층 직접 읽기(지면 보존)",
+        "sheet_read_path": "읽기 도구",
         "sheet_read_path_help": (
-            "이 워크북을 변환기로 읽을지 정합니다. 기본은 사용 안 함 — "
-            "dokey가 파일 자체를 읽어 파일이 진술하는 전부(좌표 있는 셀·"
-            "병합·그리는 범위가 적힌 차트·앵커 있는 그림)를 보존합니다. "
-            "변환기는 시트를 표로 렌더하며 그것들을 보존하지 않습니다."
+            "이 워크북을 누가 읽을지 정합니다. 기본은 dokey — 파일 자체를 "
+            "읽어 파일이 진술하는 전부(좌표 있는 셀·병합·그리는 범위가 적힌 "
+            "차트·앵커 있는 그림)를 보존합니다. 변환기는 시트를 표로 "
+            "렌더하며 그것들을 보존하지 않습니다."
         ),
         "sheet_read_native": (
-            "사용 안 함 — dokey가 직접 읽음 (셀·병합·차트·그림, 좌표 보존)"
+            "dokey — 파일을 직접 읽음 (셀·병합·차트·그림, 좌표 보존)"
         ),
         "sheet_read_native_legacy": (
-            "사용 안 함 — dokey가 직접 읽음(xlrd; 셀·타입·병합) — 변환기는 "
-            "이 형식을 열지 못합니다"
+            "dokey — xlrd로 직접 읽음(셀·타입·병합) — 변환기는 이 형식을 "
+            "열지 못합니다"
         ),
         "sheet_read_converter": (
             "{kind} — 시트를 표로 렌더; 좌표·병합·차트는 소실"
@@ -513,12 +515,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "read_method": "PDF 읽기 방식",
         "read_method_auto": "자동",
-        "read_method_never": "텍스트 층만",
+        "read_method_never": "dokey — 텍스트 층 직접 읽기",
         "read_method_always": "레이아웃 변환기",
         "read_method_help": (
-            "자동은 PDF의 텍스트 층을 읽고, 지면이 이미지일 때만 레이아웃 "
-            "변환기에 넘깁니다. 텍스트 층이 순서를 그르치는 조판(다단·표)은 "
-            "변환기를 직접 고르십시오 — 느리고, 변환기가 설치돼 있어야 합니다."
+            "자동은 dokey가 PDF의 텍스트 층을 직접 읽고, 지면이 이미지일 "
+            "때만 레이아웃 변환기에 넘깁니다. 텍스트 층이 순서를 그르치는 "
+            "조판(다단·표)은 변환기를 직접 고르십시오 — 느리고, 변환기가 "
+            "설치돼 있어야 합니다."
         ),
         "ingest_mode": "인식 방식",
         "ingest_mode_auto": "자동 (권장)",

@@ -11,7 +11,6 @@ from types import SimpleNamespace
 import streamlit as st
 
 from dokey import cli as dokey_cli
-from dokey import convert as convertlib
 from dokey import converters as converterslib
 from dokey import hwp as hwplib
 from dokey import mdunit
@@ -211,14 +210,7 @@ def run_hwp_ingest_ui(upload, lake_name: str) -> None:
 def _flow_ingest_form(upload) -> None:
     """Convert a flow document, then unitize its heading structure."""
     st.caption(t("flow_input_caption"))
-    saved = convertlib.load_converter()
-    offered: list = []
-    seen: set[str] = set()
-    for converter in ([saved] if saved else []) + converterslib.discover():
-        if converter.kind in seen:
-            continue
-        seen.add(converter.kind)
-        offered.append(converter)
+    offered = converterslib.offered()
     if not offered:
         st.warning(t("flow_converter_offline"))
         selected = None

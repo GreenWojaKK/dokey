@@ -12,7 +12,6 @@ from types import SimpleNamespace
 import streamlit as st
 
 from dokey import cli as dokey_cli
-from dokey import convert as convertlib
 from dokey import converters as converterslib
 from dokey import search as searchlib
 from dokey.ui.common import (
@@ -122,6 +121,7 @@ def run_ingest_auto_ui(
     section_depth: str = "auto",
     profile: str = "auto",
     write_items: bool = True,
+    converter: str | None = None,
 ) -> None:
     """Save a staged PDF and run the automatic ingest workflow."""
     work = Path(tempfile.mkdtemp(prefix="dokey_ui_"))
@@ -143,6 +143,7 @@ def run_ingest_auto_ui(
         section_overlap=section_overlap,
         ocr_endpoint=None,
         convert=read_method,
+        converter=converter,
         blocks=None,
     )
     log = io.StringIO()
@@ -203,28 +204,25 @@ def _parse_int_list(text: str) -> list[int] | None:
     return values or None
 
 
-def converter_status() -> bool:
+def converter_status(offered=None) -> bool:
     """Show the available converters and the output each one retains."""
-    saved = convertlib.load_converter()
-    entries = []
-    seen: set[str] = set()
-    for converter in ([saved] if saved else []) + converterslib.discover():
-        if converter.kind in seen:
-            continue
-        seen.add(converter.kind)
-        entries.append(
-            f"{converter.kind} \u2014 {converterslib.yields_label(converter.kind)}"
-        )
-    if not entries:
+    if offered is None:
+        offered = converterslib.offered()
+    if not offered:
         st.caption(t("converter_offline"))
         return False
+    entries = [
+        f"{converter.kind} \u2014 {converterslib.yields_label(converter.kind)}"
+        for converter in offered
+    ]
     st.caption(t("converters_discovered", list=" \u00b7 ".join(entries)))
     return True
 
 
 def _auto_ingest_form(pdf_upload) -> None:
     """Render the automatic PDF ingest controls."""
-    has_converter = converter_status()
+    machine = converterslib.offered()
+    has_converter = converter_status(machine)
     essentials = st.columns(3)
     with essentials[0]:
         lake_name = st.text_input(
@@ -248,6 +246,18 @@ def _auto_ingest_form(pdf_upload) -> None:
                 format_func=lambda value: t(f"read_method_{value}"),
                 key="auto_convert",
                 help=t("read_method_help"),
+                disabled=not has_converter,
+            )
+            converter_choice = st.selectbox(
+                t("pdf_converter_choice"),
+                [None] + [conv.kind for conv in machine],
+                format_func=lambda value: (
+                    t("pdf_converter_auto")
+                    if value is None
+                    else f"{value} — {converterslib.yields_label(value)}"
+                ),
+                key="auto_converter",
+                help=t("pdf_converter_choice_help"),
                 disabled=not has_converter,
             )
             offset_text = st.text_input(
@@ -294,6 +304,7 @@ def _auto_ingest_form(pdf_upload) -> None:
             depth,
             profile,
             write_items,
+            converter_choice if has_converter else None,
         )
 
 

@@ -12,7 +12,6 @@ from types import SimpleNamespace
 import streamlit as st
 
 from dokey import cli as dokey_cli
-from dokey import convert as convertlib
 from dokey import converters as converterslib
 from dokey import sheets as sheetslib
 from dokey.ui.common import (
@@ -56,12 +55,7 @@ def _sheet_read_options(suffix: str) -> tuple[list[tuple[str | None, str]], bool
             blocked = True
     elif not sheetslib.needs_converter(Path(f"x{suffix}")):
         options.append((None, t("sheet_read_native")))
-    saved = convertlib.load_converter()
-    seen: set[str] = set()
-    for converter in ([saved] if saved else []) + converterslib.discover():
-        if converter.kind in seen:
-            continue
-        seen.add(converter.kind)
+    for converter in converterslib.offered():
         if "blocks" in converterslib.adapter_yields(converter.kind):
             label = t("sheet_read_converter", kind=converter.kind)
         else:

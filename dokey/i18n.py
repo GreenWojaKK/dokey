@@ -111,6 +111,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "`pip install markitdown[docx,pptx]` — or `pip install docling`, "
             "which also keeps page evidence for PDFs."
         ),
+        "pdf_converter_choice": "Converter",
+        "pdf_converter_auto": "Auto — the one that keeps the most evidence",
+        "pdf_converter_choice_help": (
+            "Which tool converts this PDF when conversion happens at all — a "
+            "scanned original, or reading set to always convert. A PDF states "
+            "pages, so the automatic pick prefers a converter that keeps "
+            "them. A named one is followed as given, and when it cannot "
+            "serve — a markdown-only tool has nothing to read on a scan — "
+            "the run reports that instead of substituting."
+        ),
         "sheet_xlrd_offline": (
             "Reading a legacy .xls needs xlrd (`pip install xlrd`) — or save "
             "the workbook as .xlsx and add that instead."
@@ -417,6 +427,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "이 형식을 받을 변환기가 없습니다. 경량으로 충분합니다: "
             "`pip install markitdown[docx,pptx]` — 또는 PDF의 지면 증거까지 "
             "보존하는 `pip install docling`."
+        ),
+        "pdf_converter_choice": "변환기",
+        "pdf_converter_auto": "자동 — 증거를 가장 많이 남기는 것",
+        "pdf_converter_choice_help": (
+            "변환이 일어나는 경우(스캔 원본이거나 읽기 방식이 '항상 변환'일 "
+            "때) 이 PDF를 어떤 도구로 변환할지 정합니다. PDF는 지면을 "
+            "진술하므로 자동 선택은 지면을 보존하는 변환기를 우선합니다. "
+            "지정하면 그대로 따르되, 감당하지 못하는 경우(마크다운만 내는 "
+            "도구는 스캔에서 읽을 것이 없음) 대체하지 않고 실패를 알립니다."
         ),
         "sheet_xlrd_offline": (
             "구형 .xls를 읽으려면 xlrd가 필요합니다(`pip install xlrd`) — "

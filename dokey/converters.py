@@ -125,6 +125,23 @@ def discover() -> list[convertlib.Converter]:
     return found
 
 
+def offered() -> list[convertlib.Converter]:
+    """What this machine offers a form: the saved converter, then the rest.
+
+    One entry per kind -- a saved docling build and a discovered one are the
+    same offer, and the saved one is the particular build the user chose.
+    """
+    found: list[convertlib.Converter] = []
+    seen: set[str] = set()
+    saved = convertlib.load_converter()
+    for converter in ([saved] if saved else []) + discover():
+        if converter.kind in seen:
+            continue
+        seen.add(converter.kind)
+        found.append(converter)
+    return found
+
+
 @dataclass(frozen=True)
 class Choice:
     """A converter selected for one input, with what that selection costs.

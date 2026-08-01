@@ -2071,6 +2071,28 @@ class ConverterRegistryTests(unittest.TestCase):
         self.assertEqual(choice.source, "config")
         self.assertTrue(choice.degraded)
 
+    def test_the_machine_offers_each_kind_once_with_the_saved_build_first(
+        self,
+    ) -> None:
+        from dokey import converters
+
+        # Every form shows the same offer: the saved converter stands in for
+        # the discovered build of its kind, and no kind is listed twice.
+        saved = convertlib.Converter(("my", "docling"), "docling")
+        with (
+            unittest.mock.patch.object(
+                convertlib, "load_converter", return_value=saved
+            ),
+            unittest.mock.patch.object(
+                converters,
+                "discover",
+                return_value=[self._conv("docling"), self._conv("markitdown")],
+            ),
+        ):
+            offer = converters.offered()
+        self.assertEqual([conv.kind for conv in offer], ["docling", "markitdown"])
+        self.assertEqual(offer[0].argv, ("my", "docling"))
+
     def test_requiring_blocks_skips_what_cannot_yield_them(self) -> None:
         from dokey import converters
 

@@ -30,6 +30,24 @@ class CliModuleBoundaryTests(unittest.TestCase):
         ):
             self.assertTrue(callable(getattr(cli, name)), name)
 
+    def test_the_sentinel_hands_the_process_to_streamlit_before_parsing(
+        self,
+    ) -> None:
+        with mock.patch.object(cli, "run_streamlit") as shim:
+            cli.main(["--run-streamlit", "run", "x.py", "--server.port", "9"])
+        shim.assert_called_once_with(["run", "x.py", "--server.port", "9"])
+
+    def test_a_frozen_build_reinvokes_itself_for_streamlit(self) -> None:
+        import sys
+
+        with mock.patch.object(runtime.sys, "frozen", True, create=True):
+            self.assertEqual(
+                runtime._streamlit_command(), [sys.executable, "--run-streamlit"]
+            )
+        self.assertEqual(
+            runtime._streamlit_command(), [sys.executable, "-m", "streamlit"]
+        )
+
     def test_ui_command_resolves_the_package_entry_file(self) -> None:
         with (
             mock.patch.object(

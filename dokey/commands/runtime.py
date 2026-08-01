@@ -47,6 +47,27 @@ def run_backend(args: argparse.Namespace) -> None:
             print("Choose one with: dokey backend --set <url>")
 
 
+def _streamlit_command() -> list[str]:
+    """The command that starts Streamlit in a child process.
+
+    From source that is ``python -m streamlit``. In a frozen build there is
+    no Python beside the executable -- ``sys.executable`` is dokey itself --
+    so the exe re-invokes itself with a sentinel argument that hands the
+    child process to Streamlit before dokey's own parser ever runs.
+    """
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--run-streamlit"]
+    return [sys.executable, "-m", "streamlit"]
+
+
+def run_streamlit(arguments: list[str]) -> None:
+    """Become Streamlit: the frozen build's stand-in for ``-m streamlit``."""
+    from streamlit.web import cli as streamlit_cli
+
+    sys.argv = ["streamlit", *arguments]
+    sys.exit(streamlit_cli.main())
+
+
 def _free_port() -> int:
     import socket
 
@@ -89,7 +110,7 @@ def run_app(args: argparse.Namespace) -> None:
     package_root = Path(__file__).resolve().parents[1]
     app_path = package_root / "ui_app.py"
     command = [
-        sys.executable, "-m", "streamlit", "run", str(app_path),
+        *_streamlit_command(), "run", str(app_path),
         "--server.port", str(port),
         "--server.headless", "true",
         "--browser.gatherUsageStats", "false",
@@ -133,7 +154,7 @@ def run_ui(args: argparse.Namespace) -> None:
         )
     package_root = Path(__file__).resolve().parents[1]
     app_path = package_root / "ui_app.py"
-    command = [sys.executable, "-m", "streamlit", "run", str(app_path)]
+    command = [*_streamlit_command(), "run", str(app_path)]
     if args.port is not None:
         command += ["--server.port", str(args.port)]
     script_args = []

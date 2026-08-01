@@ -27,13 +27,18 @@ from .commands.folios import run_folios
 from .commands.lake import ingest_entries
 from .commands.parser import build_parser
 from .commands.pdf import ingest, open_reader, run_auto, run_probe
-from .commands.runtime import run_app, run_backend, run_ui
+from .commands.runtime import run_app, run_backend, run_streamlit, run_ui
 from .commands.search import run_index, run_search
 from .commands.sheets import run_sheet_ingest
 
 
 def main(argv: list[str] | None = None) -> None:
     arguments = list(sys.argv[1:]) if argv is None else list(argv)
+    if arguments and arguments[0] == "--run-streamlit":
+        # The frozen build's child-process door (see runtime._streamlit_command):
+        # everything after the sentinel is a Streamlit command line.
+        run_streamlit(arguments[1:])
+        return
     if not arguments:
         # A double-clicked dokey.exe lands here: launch the app instead of
         # printing a usage error into a console that closes immediately.

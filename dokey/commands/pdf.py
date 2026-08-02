@@ -169,8 +169,8 @@ def run_auto(args: argparse.Namespace) -> None:
         )
 
     # TOC source cascade, one implementation shared with the app's preview:
-    # embedded outline, the book's own printed contents page, the document's
-    # numbered headings, and OCR only when the text layer had nothing.
+    # embedded outline, the document's own printed contents page, its numbered
+    # headings, and OCR only when the text layer had nothing.
     endpoint, _ = backendslib.resolve_endpoint(args.ocr_endpoint)
     found = tocsource.resolve(
         reader,
@@ -229,8 +229,8 @@ def _ingest_resolved(
     """
     # An entry whose page is already a physical PDF page needs no offset and no
     # smoke test: an outline's destination and a heading found in the body both
-    # say where they are, where a printed contents page only says what the book
-    # calls that place.
+    # say where they are, where a printed contents page only says what the
+    # document calls that place.
     if physical_pages:
         page_offset = 0 if args.page_offset is None else args.page_offset
         if has_fitz and args.section_overlap is None:
@@ -356,7 +356,7 @@ def _printed_toc_if_better(
     failed. Otherwise the outline stands -- a poor table of contents still
     beats none, and its pages at least need no offset.
 
-    The printed entries carry the book's own folios rather than PDF pages, so
+    The printed entries carry the document's own folios rather than PDF pages, so
     they are measured on the spans between them, which the page offset does not
     move.
     """

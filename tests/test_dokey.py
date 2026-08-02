@@ -850,7 +850,7 @@ class ProjectWorkspaceTests(unittest.TestCase):
     importlib.util.find_spec("streamlit") is not None, "streamlit not installed"
 )
 class UiIngestPanelTests(unittest.TestCase):
-    """The Add-a-book view offers the smart auto path by default."""
+    """The Add-a-document view reads what it can from the document itself."""
 
     def _app(self, tmp_path: Path):
         from streamlit.testing.v1 import AppTest
@@ -922,7 +922,7 @@ class UiIngestPanelTests(unittest.TestCase):
                 else:
                     os.environ["DOKEY_CONFIG_DIR"] = previous_config
 
-    def test_add_book_hides_the_active_book_context(self) -> None:
+    def test_adding_a_document_hides_the_active_library_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             previous_cwd = Path.cwd()
@@ -1270,7 +1270,7 @@ class UiIngestPanelTests(unittest.TestCase):
                 else:
                     os.environ["DOKEY_CONFIG_DIR"] = previous_config
 
-    def test_the_book_chooser_starts_at_the_active_project(self) -> None:
+    def test_the_document_chooser_starts_at_the_active_project(self) -> None:
         from dokey import pickers
 
         if not pickers.HAS_FILE_PICKER:

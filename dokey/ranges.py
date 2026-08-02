@@ -86,7 +86,7 @@ def build_ranges(
             continue
         page_count = pdf_end_page - pdf_start_page + 1
         # Page-independent name: the section's title, so re-ingesting the same
-        # book (e.g. with a corrected offset) reuses the exact filename and
+        # document (e.g. with a corrected offset) reuses the exact filename and
         # overwrites in place instead of leaving a differently-named duplicate.
         # Page ranges and ordinals live in the manifest fields, not in the name.
         parent_folder, filename = namer.name(

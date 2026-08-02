@@ -53,7 +53,7 @@ from pathlib import Path
 from . import backends as backendslib
 
 CONVERTER_NAME = "docling"
-DEFAULT_TIMEOUT = 1800  # a scanned book with OCR is minutes of work, not seconds
+DEFAULT_TIMEOUT = 1800  # a scan with OCR is minutes of work, not seconds
 OUTPUT_SUFFIXES = {"md": ".md", "json": ".json"}
 # What a conversion writes when nothing is asked for: the readable render and
 # the block stream it came from. One parse produces both, and dokey pairs them
@@ -311,7 +311,7 @@ def build_command(
         str(output_dir),
         "--abort-on-error",
         # Docling embeds every figure as base64 by default. Measured on three
-        # book pages: 1,397,804 of 1,402,431 characters were image data and
+        # typeset pages: 1,397,804 of 1,402,431 characters were image data and
         # 4,627 were text. dokey indexes text, so a figure is marked where it
         # sits and its pixels stay out of the lake.
         "--image-export-mode",

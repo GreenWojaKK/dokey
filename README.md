@@ -1,6 +1,6 @@
 # Dokey
 
-`dokey` is a small CLI for turning long book or booklet PDFs into document-lake friendly units.
+`dokey` is a small CLI for turning long documents — reports, standards, manuals, books — into document-lake friendly units.
 
 The first target workflow is RAG ingestion: avoid sending a full 700-page PDF to an LLM, split it into section or subtopic units, and keep a manifest that preserves source page ranges and hierarchy.
 
@@ -41,7 +41,7 @@ The first source is checked before it is believed. A bookmark is metadata, and
 metadata is not always about the document: one 210-page report's entire outline
 is a single entry reading `빈 페이지` — "blank page" — pointing at page 2, left
 behind by whoever made the file. Taken at its word it yields one section holding
-the whole book. So an outline is asked to show that it divides the document, and
+the whole document. So an outline is asked to show that it divides it, and
 if its widest entry governs more than half the pages, dokey reads the printed
 contents page too and prefers that when it has more entries and does divide. The
 test is coverage, not vocabulary: no list of titles can be checked against the
@@ -176,8 +176,8 @@ Search index: dokey_out\...\gold\search.db (28 sections, 613 pages)
 The recognition is deliberately lexical — no LLM:
 
 - **TOC source cascade**: the embedded PDF outline when one exists, else the
-  book's own printed contents page(s) read by word geometry (with the OCR
-  fallback for scanned books).
+  document's own printed contents page(s) read by word geometry (with the OCR
+  fallback for scans).
 - **Page offset prior**: derived from the document itself, never required
   from the user. Most body pages carry their printed folio in the running
   header or footer; each one votes `offset = PDF page − folio` and the modal
@@ -188,7 +188,7 @@ The recognition is deliberately lexical — no LLM:
   (exact, then a prefix, then the bare `제N절`/`10.2` marker at the page
   head, with typographic variants folded); a hit pins the section to its
   true physical page and updates the running offset, so an offset that
-  drifts mid-book — plates, part dividers, unnumbered leaves — is corrected
+  drifts mid-document — plates, part dividers, unnumbered leaves — is corrected
   section by section. Chapter-divider pages listing several section titles
   are recognized and never count as a start. Unmatched sections are
   interpolated from their neighbors and reported, never silently misplaced.
@@ -213,9 +213,9 @@ CSV TOC:
 
 ```powershell
 dokey ingest `
-  --input book.pdf `
+  --input report.pdf `
   --toc examples\toc_csv_example.csv `
-  --output-dir dokey_out\book `
+  --output-dir dokey_out\report `
   --page-offset 13
 ```
 
@@ -223,10 +223,10 @@ Text TOC:
 
 ```powershell
 dokey ingest `
-  --input book.pdf `
+  --input report.pdf `
   --toc examples\toc_text_example.txt `
   --toc-format text `
-  --output-dir dokey_out\book `
+  --output-dir dokey_out\report `
   --page-offset 0
 ```
 
@@ -234,19 +234,19 @@ PDF outline/bookmarks:
 
 ```powershell
 dokey ingest `
-  --input book.pdf `
+  --input report.pdf `
   --toc-from-outline `
-  --output-dir dokey_out\book `
+  --output-dir dokey_out\report `
   --page-offset 0
 ```
 
-The book's own printed contents page (no outline, no TOC file needed):
+The document's own printed contents page (no outline, no TOC file needed):
 
 ```powershell
 dokey ingest `
-  --input book.pdf `
+  --input report.pdf `
   --toc-from-page `
-  --output-dir dokey_out\book `
+  --output-dir dokey_out\report `
   --page-offset 13
 ```
 
@@ -420,13 +420,13 @@ works identically. `pip install dokey` stays a pypdf-sized install. **Nothing
 has to be configured for it to be used**: dokey looks for the converter on
 PATH and then in the interpreter running dokey, so a `pip install docling` is
 the whole setup — from the CLI, from `dokey auto`, and from the web UI, which
-says which converter it found before you add a book. `dokey convert --set` is
+says which converter it found before you add a document. `dokey convert --set` is
 there for a converter that is somewhere else entirely, not as a step.
 
 **Converting a document and taking it apart are separate acts**, so `dokey
 convert` does the first and stops. It writes the render and the block stream
 and prints the command that would unitize them. Conversion is the slow half —
-minutes on a scanned book — and pinning it to a lake build means repeating it
+minutes on a scan — and pinning it to a lake build means repeating it
 whenever the unitizing is what you want to redo. `--ingest` asks for both in
 one go.
 
@@ -444,7 +444,7 @@ Two defaults are set from measurement rather than left to the converter:
   only when the pages really are images, and says so; for Korean pass
   `--ocr-engine easyocr --ocr-lang ko,en`.
 - **Figures are placeholders, not base64.** Docling embeds every figure by
-  default: on three measured book pages that was 1,397,804 of 1,402,431
+  default: on three measured typeset pages that was 1,397,804 of 1,402,431
   characters. dokey asks for `placeholder`, so the figure's position is marked
   and its pixels stay out of the lake. `--images embedded` restores them.
 
@@ -453,7 +453,7 @@ pages are images carrying no text. Sparse-but-real text stays on the pypdf path;
 `--convert always` / `--convert never` override the judgement either way, and
 the web UI offers the same three choices under **Advanced overrides**. When
 `dokey auto` does convert, it takes both formats too, so the sections of a
-scanned book get the pages the converter recorded rather than synthetic ones.
+scan get the pages the converter recorded rather than synthetic ones.
 
 ## Flow documents, and a converter registry typed by evidence
 
@@ -615,12 +615,12 @@ Markdown files under `artifacts/by_section/` rather than split PDFs.
 ## Text vs Scanned PDFs
 
 Not every PDF has a usable text layer. A publisher or digital-first PDF does;
-a scanned booklet is a stack of page images that `page.extract_text()` returns
+a scan is a stack of page images that `page.extract_text()` returns
 empty for, so ingesting it the normal way yields empty sections. `dokey probe`
 classifies a PDF before you ingest it:
 
 ```powershell
-dokey probe --input book.pdf
+dokey probe --input report.pdf
 ```
 
 It measures the extractable text per page and whether each page is essentially
@@ -641,14 +641,14 @@ the optional `[ocr]` extra (PyMuPDF).
 Build the index (SQLite FTS5, standard library only, stored at `gold/search.db`):
 
 ```powershell
-dokey index --lake dokey_out\book
+dokey index --lake dokey_out\report
 ```
 
 Search page text and section titles:
 
 ```powershell
-dokey search "controller tuning" --lake dokey_out\book
-dokey search "valve OR actuator" --lake dokey_out\book --limit 5
+dokey search "controller tuning" --lake dokey_out\report
+dokey search "valve OR actuator" --lake dokey_out\report --limit 5
 ```
 
 Notes:
@@ -665,7 +665,7 @@ A local Streamlit UI over the same index (optional dependency):
 
 ```powershell
 python -m pip install -e .[ui]
-dokey ui --lake dokey_out\book
+dokey ui --lake dokey_out\report
 ```
 
 The sidebar is project-based. Add a project folder once and dokey remembers it
@@ -673,20 +673,21 @@ in `~/.dokey/config.json`; every library found under that project appears in
 its folder tree on future launches. Selecting a library switches the search and
 section view immediately. New documents added from the UI are written under
 the active project's `dokey_out/` folder, so there is no library path to reopen
-for each book.
+for each document.
 
-An empty query shows the section manifest for browsing (with recovered book
-pages); results link to the split PDF artifacts. The sidebar's **Add a book**
-panel runs the whole pipeline from the browser, and defaults to
-**Auto** — the same smart path as `dokey auto`: upload a PDF and add it, and
-the TOC source, the page offset, and the section overlap are all read from
-the document (no page offset to enter by hand). A wrong guess is correctable
-under **Advanced overrides** without leaving Auto. Switch to **Manual** for
-full control — pick the TOC source (PDF outline, an uploaded CSV/text TOC, or
-the printed contents page, which falls back to the OCR backend for scanned
-books) and set the offset and overlap yourself. Either way it ingests,
-optionally recovers printed page numbers, builds the index, and opens the new
-lake — no CLI needed. The chooser takes every format the CLI does — PDF,
+An empty query shows the section manifest for browsing (with recovered printed
+pages); results link to the split PDF artifacts. The sidebar's **Add a
+document** panel runs the whole pipeline from the browser, and asks one
+question: **who reads this**. The default is automatic — dokey reads the PDF's
+own text layer and hands only page images to a converter that keeps pages —
+and the alternatives are dokey alone or a named converter, followed as given.
+Everything else is read from the document, the same way `dokey auto` does it:
+the TOC source, the page offset, each boundary's overlap, and the printed page
+numbers. There is no mode to pick and no offset to type; every decision is
+reported in the ingest log, and the CLI keeps the escape hatches
+(`--toc`, `--page-offset`, `--section-overlap`) for the rare document that
+needs one. When it finishes, the app lands on the library it just built, with
+that log under its name. The chooser takes every format the CLI does — PDF,
 HWP/HWPX, Markdown, and spreadsheets (`.xlsx` and its relatives) — and routes
 each to its own form: a workbook gets the sheet path, with its sheet names
 shown up front, since those are exactly the sections it will become. The **🔌 OCR backend** panel shows whether your local
@@ -708,7 +709,7 @@ The same UI as a local desktop window (no browser tab, still 100% on-machine):
 
 ```powershell
 python -m pip install -e .[app]
-dokey app --lake dokey_out\book
+dokey app --lake dokey_out\report
 ```
 
 `dokey app` starts the UI server headless on an unused port and opens it in a
@@ -730,15 +731,16 @@ Deploy-friendly launch surfaces (no arguments needed):
 
 ## Printed Page Numbers
 
-A PDF page is rarely the book's printed page: front matter, part dividers, and
+A PDF page is rarely the printed page: front matter, part dividers, and
 dropped blank leaves put the two out of step, and the offset drifts across the
-book. When a lake is built from a PDF outline, `pdf_start_page` is the physical
-page but the printed folio differs. `dokey folios` recovers the true printed
-pages and adds `printed_start_page` / `printed_end_page` to the manifest, then
-rebuilds the index so search shows real book pages.
+document. When a lake is built from a PDF outline, `pdf_start_page` is the
+physical page but the printed folio differs. `dokey folios` recovers the true
+printed pages and adds `printed_start_page` / `printed_end_page` to the
+manifest, then rebuilds the index so search shows the pages the document
+itself prints.
 
 ```powershell
-dokey folios --lake dokey_out\book
+dokey folios --lake dokey_out\report
 ```
 
 Two sources, selected with `--source` (default `auto`):
@@ -774,7 +776,7 @@ CSV exported from a previous manifest also works if it has `content_start_page` 
 Plain text TOC:
 
 ```text
-* Part 1: Example Book 1
+* Part 1: Example Part 1
 o Introduction 1
 o Background 3
 * Knowledge Area: Example Systems 6
@@ -797,9 +799,9 @@ When content page 1 is PDF page 14, use `--page-offset 13`:
 
 ```powershell
 dokey ingest `
-  --input book.pdf `
+  --input report.pdf `
   --toc toc.csv `
-  --output-dir dokey_out\book `
+  --output-dir dokey_out\report `
   --page-offset 13
 ```
 
@@ -807,9 +809,9 @@ When TOC/content pages already match PDF pages, use `--page-offset 0`:
 
 ```powershell
 dokey ingest `
-  --input book-relative.pdf `
+  --input report-relative.pdf `
   --toc toc.csv `
-  --output-dir dokey_out\book-relative `
+  --output-dir dokey_out\report-relative `
   --page-offset 0
 ```
 

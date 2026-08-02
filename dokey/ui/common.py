@@ -57,7 +57,7 @@ def finish_ingest(out_dir: Path, log) -> None:
     st.session_state["_new_lake"] = str(out_dir)
     st.session_state["_import_open"] = False
     # The document has been added; leaving it staged would hand the next
-    # import a form already filled with the book that is now on the shelf.
+    # import a form already filled with the document that is now on the shelf.
     st.session_state.pop("_ingest_local_file", None)
     st.rerun()
 

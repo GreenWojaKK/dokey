@@ -35,7 +35,7 @@ def result_card(lake: Path, hit: searchlib.SectionHit) -> None:
         st.markdown(f"**{crumb}**{badge}")
         if hit.printed_start_page is not None:
             meta = t(
-                "book_pages",
+                "printed_pages",
                 start=hit.printed_start_page,
                 end=hit.printed_end_page,
             )
@@ -95,8 +95,8 @@ def browse_sections(lake: Path) -> None:
             "index": t("column_index"),
             "parent": t("column_parent"),
             "title": t("column_title"),
-            "printed_start_page": t("column_book_start"),
-            "printed_end_page": t("column_book_end"),
+            "printed_start_page": t("column_printed_start"),
+            "printed_end_page": t("column_printed_end"),
             "content_start_page": t("column_content_start"),
             "content_end_page": t("column_content_end"),
             "pdf_start_page": t("column_pdf_start"),
@@ -109,8 +109,8 @@ def browse_sections(lake: Path) -> None:
         t("column_index"): st.column_config.NumberColumn(width="small"),
         t("column_parent"): st.column_config.TextColumn(width="medium"),
         t("column_title"): st.column_config.TextColumn(width="large"),
-        t("column_book_start"): st.column_config.NumberColumn(width="small"),
-        t("column_book_end"): st.column_config.NumberColumn(width="small"),
+        t("column_printed_start"): st.column_config.NumberColumn(width="small"),
+        t("column_printed_end"): st.column_config.NumberColumn(width="small"),
         t("column_content_start"): st.column_config.NumberColumn(width="small"),
         t("column_content_end"): st.column_config.NumberColumn(width="small"),
         t("column_pdf_start"): st.column_config.NumberColumn(width="small"),

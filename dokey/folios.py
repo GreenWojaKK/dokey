@@ -1,9 +1,9 @@
-"""Recover true printed page numbers (folios) from a book's own text.
+"""Recover true printed page numbers (folios) from a document's own text.
 
 When a lake is built from a PDF outline, the manifest's ``pdf_start_page`` is the
-physical PDF page, but the book's printed folio differs by an offset that drifts
-across the book (front matter, dropped blank leaves, part dividers). If the PDF
-has a text-extractable Table of Contents — most born-digital books do — the
+physical PDF page, but the printed folio differs by an offset that drifts
+across the document (front matter, dropped blank leaves, part dividers). If the
+PDF has a text-extractable Table of Contents — most born-digital ones do — the
 printed page of every numbered section is right there in the text. Joining that
 against the outline-derived manifest (by section number) yields the exact
 printed page per section, with no OCR and no constant-offset assumption.

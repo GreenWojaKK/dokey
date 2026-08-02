@@ -1,4 +1,4 @@
-"""Document lake helpers for section-aware book PDF ingestion."""
+"""Document lake helpers for section-aware document ingestion."""
 
 __all__ = ["__version__"]
 

@@ -1,10 +1,10 @@
 """Local OCR pipeline for recovering true printed page numbers (folios).
 
-The book PDFs dokey ingests are almost never numbered so that PDF page N ==
+The PDFs dokey ingests are almost never numbered so that PDF page N ==
 printed page N: front matter, part dividers, and dropped blank leaves push the
-two out of step, and the offset drifts across the book. When a lake is built
+two out of step, and the offset drifts across the document. When a lake is built
 from a PDF outline (whose destinations are physical PDF pages), the manifest's
-``content_*`` columns therefore hold PDF pages, not the book's printed folios.
+``content_*`` columns therefore hold PDF pages, not the printed folios.
 
 This module reads the real printed folio off each page image with a local
 vision-language OCR model served over an OpenAI-compatible HTTP endpoint

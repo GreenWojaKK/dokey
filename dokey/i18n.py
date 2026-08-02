@@ -13,7 +13,7 @@ LANGUAGE_LABELS = {
 
 TRANSLATIONS: dict[str, dict[str, str]] = {
     "en": {
-        "ingest_book": "Add a book",
+        "ingest_document": "Add a document",
         "close_import": "Close",
         "ocr_backend": "OCR backend (bring your own)",
         "ingesting": "Ingesting {name} ...",
@@ -117,7 +117,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "choose_document": "Choose a document",
         "change_document": "Choose another document",
         "clear_document": "Clear",
-        "choose_document_title": "Choose a book to add",
+        "choose_document_title": "Choose a document to add",
         "selected_document": "Selected · {path}",
         "document_missing": "The selected file is no longer available.",
         "md_input_caption": (
@@ -199,7 +199,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "library_name_optional": "Library name (optional)",
         "run_ingest": "Add to library",
         "no_library": (
-            "No library yet. Use ‘Add a book’ above, or run `dokey ingest`."
+            "No library yet. Use ‘Add a document’ above, or run `dokey ingest`."
         ),
         "projects": "Projects",
         "add_project": "Add project folder",
@@ -253,7 +253,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "max_results": "Max results",
         "title_match": "title match",
-        "book_pages": "book pp. {start}–{end}",
+        "printed_pages": "printed pp. {start}–{end}",
         "content_pages": "content pp. {start}–{end}",
         "pdf_pages": "PDF pp. {start}–{end}",
         "matched_pdf_pages": "matched PDF pages: {pages}",
@@ -267,8 +267,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "column_index": "index",
         "column_parent": "parent",
         "column_title": "title",
-        "column_book_start": "book start",
-        "column_book_end": "book end",
+        "column_printed_start": "printed start",
+        "column_printed_end": "printed end",
         "column_content_start": "content start",
         "column_content_end": "content end",
         "column_pdf_start": "PDF start",
@@ -277,18 +277,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "column_folio_source": "page-number source",
     },
     "ko": {
-        "ingest_book": "책 추가",
+        "ingest_document": "문서 추가",
         "close_import": "닫기",
         "ocr_backend": "OCR 서버 연결",
         "ingesting": "{name}을(를) 가져오는 중...",
-        "recovering_pages": "책에 인쇄된 페이지 번호를 복원하는 중...",
+        "recovering_pages": "문서에 인쇄된 페이지 번호를 복원하는 중...",
         "skipped_page_recovery": (
             "인쇄 페이지 번호 복원을 건너뛰고 검색 색인만 만들었습니다: {error}"
         ),
         "building_index": "검색 색인을 만드는 중...",
-        "ingest_failed": "책을 가져오지 못했습니다: {error}",
-        "ingest_error": "책을 가져오는 중 오류가 발생했습니다: {error}",
-        "ingested": "책을 추가했습니다 → {path}",
+        "ingest_failed": "문서를 가져오지 못했습니다: {error}",
+        "ingest_error": "문서를 가져오는 중 오류가 발생했습니다: {error}",
+        "ingested": "문서를 추가했습니다 → {path}",
         "ingest_log": "처리 기록",
         "no_output": "(기록 없음)",
         "online": "연결됨 · {models}",
@@ -377,7 +377,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "choose_document": "문서 선택",
         "change_document": "다른 문서 선택",
         "clear_document": "해제",
-        "choose_document_title": "추가할 책 선택",
+        "choose_document_title": "추가할 문서 선택",
         "selected_document": "선택됨 · {path}",
         "document_missing": "선택한 파일을 더 이상 찾을 수 없습니다.",
         "md_input_caption": (
@@ -455,7 +455,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "library_name_optional": "라이브러리 이름 (선택 사항)",
         "run_ingest": "라이브러리에 추가",
         "no_library": (
-            "아직 라이브러리가 없습니다. 위의 ‘책 추가’를 사용하거나 "
+            "아직 라이브러리가 없습니다. 위의 ‘문서 추가’를 사용하거나 "
             "`dokey ingest`를 실행하세요."
         ),
         "projects": "프로젝트",
@@ -510,7 +510,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "max_results": "최대 검색 결과",
         "title_match": "제목 일치",
-        "book_pages": "책 {start}–{end}쪽",
+        "printed_pages": "인쇄 {start}–{end}쪽",
         "content_pages": "내용 {start}–{end}쪽",
         "pdf_pages": "PDF {start}–{end}쪽",
         "matched_pdf_pages": "검색어가 나온 PDF 페이지: {pages}",
@@ -524,8 +524,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "column_index": "순번",
         "column_parent": "상위 섹션",
         "column_title": "제목",
-        "column_book_start": "책 시작",
-        "column_book_end": "책 끝",
+        "column_printed_start": "인쇄 시작",
+        "column_printed_end": "인쇄 끝",
         "column_content_start": "내용 시작",
         "column_content_end": "내용 끝",
         "column_pdf_start": "PDF 시작",

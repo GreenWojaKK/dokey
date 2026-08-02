@@ -1,7 +1,7 @@
 """Route a PDF to a text-layer or an OCR ingestion path.
 
-Not every PDF carries a usable text layer. Publisher PDFs and digital-first
-books do; a scanned booklet is a stack of page images with little or no
+Not every PDF carries a usable text layer. Typeset and digital-first
+documents do; a scan is a stack of page images with little or no
 extractable text, and feeding it to ``page.extract_text()`` yields empty
 sections. Before ingesting, ``probe`` measures how much real text each page
 holds and whether the page is essentially a full-page image, then reports
@@ -11,7 +11,7 @@ The idea is ported from an upstream ingestion pipeline, which classified a
 corpus of Korean technical standards with the document-level rule
 ``mean_chars < 150 and images > 300``.
 That constant is tuned for long documents (one scan image per page over
-hundreds of pages) and misfires on short booklets, so here the primary signal
+hundreds of pages) and misfires on short ones, so here the primary signal
 is per-page: a page is treated as scanned when it has near-zero extractable
 text while carrying an image, and the document verdict follows the fraction of
 such pages (with mean-chars kept as a corroborating signal).

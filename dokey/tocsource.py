@@ -17,7 +17,7 @@ bookmark covering the whole file is metadata about the file, not a table of
 contents -- and when it does not, a printed contents page with more entries
 takes over.
 
-*A printed contents page* states the book's own folios, which is not the same
+*A printed contents page* states the document's own folios, which is not the same
 as a PDF page: that path needs the offset calibrated and every start verified.
 
 *The body's own numbered headings* cost a text read and carry physical pages.

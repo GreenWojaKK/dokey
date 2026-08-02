@@ -1,7 +1,8 @@
-"""Build a TOC from the book's own printed contents page, by geometry.
+"""Build a TOC from the document's own printed contents page, by geometry.
 
 ``toc.py`` reads a TOC that someone already serialized to a CSV or text file,
-and ``outline.py`` reads the PDF's embedded bookmarks. Many books have neither:
+and ``outline.py`` reads the PDF's embedded bookmarks. Many documents have
+neither:
 the only table of contents is printed on a page or two of the PDF itself. This
 module recovers it directly.
 
@@ -14,7 +15,7 @@ vanish on extraction. Instead this reads the word boxes: each word carries an
 sees it -- title on the left, page number as the trailing token, indentation
 depth giving the level.
 
-Two facts of real books drive the design, both observed on a 511-page volume
+Two facts of real documents drive the design, both observed on a 511-page volume
 whose contents pages carry zero dot leaders:
 
 * The left margin drifts between facing pages (a recto/verso shift of ~18pt),
@@ -506,10 +507,10 @@ def read_page_toc(
     ocr_dpi: int = 200,
     render=None,
 ) -> list[TocEntry]:
-    """Reconstruct a TOC from the book's printed contents page(s).
+    """Reconstruct a TOC from the document's printed contents page(s).
 
     Tries the text layer first (word geometry). If the PDF has no text layer -- a
-    scanned book -- and ``ocr_client`` is supplied, falls back to OCR: front
+    scan -- and ``ocr_client`` is supplied, falls back to OCR: front
     matter is transcribed page by page only until the contents page is found,
     then discarded. ``toc_pages`` (1-based) pins the pages; otherwise they are
     located automatically. Returns leaf ``TocEntry`` rows with parents filled in,

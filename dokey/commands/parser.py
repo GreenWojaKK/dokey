@@ -12,7 +12,9 @@ from .common import _section_depth_arg
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="dokey",
-        description="Section-aware book PDF ingestion for document lake pipelines.",
+        description=(
+            "Section-aware document ingestion for document lake pipelines."
+        ),
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -358,7 +360,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--toc-from-page",
         action="store_true",
         help=(
-            "Reconstruct the TOC from the book's own printed contents page(s) by "
+            "Reconstruct the TOC from the document's own printed contents page(s) by "
             "word geometry (needs the optional [ocr] extra: PyMuPDF). Use when the "
             "PDF has no outline and no external TOC file."
         ),
@@ -378,7 +380,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "With --toc-from-page, do not fall back to OCR when the PDF has no "
-            "text layer (a scanned book); fail instead."
+            "text layer (a scan); fail instead."
         ),
     )
     split.add_argument(

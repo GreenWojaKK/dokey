@@ -50,7 +50,7 @@ def run_search(args: argparse.Namespace) -> None:
             pages += ", ..."
         if hit.printed_start_page is not None:
             location = (
-                f"    book pp. {hit.printed_start_page}-{hit.printed_end_page}"
+                f"    printed pp. {hit.printed_start_page}-{hit.printed_end_page}"
                 f" | pdf {hit.pdf_start_page}-{hit.pdf_end_page}"
             )
         else:

@@ -9,9 +9,9 @@ from .. import search as searchlib
 
 
 def _default_lake_dir(input_pdf: Path) -> Path:
-    # Keep the (often non-ASCII) book name readable in the lake path; strip
-    # only the characters the filesystem rejects.
-    stem = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', " ", input_pdf.stem).strip() or "book"
+    # Keep the (often non-ASCII) document name readable in the lake path;
+    # strip only the characters the filesystem rejects.
+    stem = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', " ", input_pdf.stem).strip() or "document"
     return Path("dokey_out") / stem
 
 

@@ -50,7 +50,7 @@ def import_control(lake: Path | None) -> None:
             st.rerun()
         return
     if st.button(
-        t("ingest_book"),
+        t("ingest_document"),
         key="import_open",
         type="primary",
         icon=":material/add:",
@@ -62,7 +62,7 @@ def import_control(lake: Path | None) -> None:
 
 def import_view() -> None:
     """Render the document import flow in the main pane."""
-    st.subheader(t("ingest_book"))
+    st.subheader(t("ingest_document"))
     st.caption(t("adding_to_project", project=_active_project_root().name))
     upload = _document_picker()
     _ingest_form_for(upload)

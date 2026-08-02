@@ -16,7 +16,7 @@ offset is recoverable from the document alone, lexically:
   the winning offset predicts them (entry page + offset, +/- 1 for part
   dividers). A title found where predicted confirms the estimate.
 
-The estimate is only a *prior*: real books drift, because plates, part
+The estimate is only a *prior*: real documents drift, because plates, part
 dividers, and unnumbered leaves push the body out of step mid-volume.
 ``pin_section_starts`` therefore smoke-tests every section — it reads the
 page where the running offset predicts the section to start, spirals nearby

@@ -112,6 +112,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     auto.add_argument(
+        "--markdown",
+        action="store_true",
+        help=(
+            "Also write each section as Markdown beside its split PDF, cut "
+            "from the text dokey already read. No converter needed; a PDF "
+            "read through a converter is unitized from its render and gets "
+            "these files either way."
+        ),
+    )
+    auto.add_argument(
         "--no-items",
         action="store_true",
         help=(
@@ -468,6 +478,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-pdf-artifacts",
         action="store_true",
         help="Write manifests only; skip split PDF artifacts.",
+    )
+    split.add_argument(
+        "--markdown",
+        action="store_true",
+        help=(
+            "Also write each section as Markdown beside its split PDF, cut "
+            "from the text dokey already read. No converter needed."
+        ),
     )
 
     index = subparsers.add_parser(

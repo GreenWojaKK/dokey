@@ -16,7 +16,13 @@ from .. import profiles as profileslib
 from .. import search as searchlib
 from ..manifest import write_manifests, write_toc
 from ..models import TocEntry
-from ..pdf import copy_raw_pdf, write_pages_jsonl, write_split_pdfs
+from ..pdf import (
+    copy_raw_pdf,
+    page_texts,
+    write_pages_jsonl,
+    write_section_markdown,
+    write_split_pdfs,
+)
 from ..ranges import build_ranges
 
 
@@ -46,6 +52,7 @@ def ingest_entries(
     no_raw_copy: bool = False,
     no_page_text: bool = False,
     no_pdf_artifacts: bool = False,
+    write_markdown: bool = False,
 ) -> int:
     """The post-TOC ingest pipeline, shared by ``ingest`` and ``auto``.
 
@@ -69,9 +76,11 @@ def ingest_entries(
         raw_path = copy_raw_pdf(input_path, output_dir)
         print(f"Wrote raw PDF: {raw_path}")
 
+    texts = page_texts(reader) if (not no_page_text or write_markdown) else None
+
     if not no_page_text:
         pages_path = output_dir / "bronze" / "pages.jsonl"
-        write_pages_jsonl(reader, pages_path)
+        write_pages_jsonl(reader, pages_path, texts=texts)
         print(f"Wrote page text: {pages_path}")
 
     toc_path = write_toc(output_dir, entries)
@@ -90,6 +99,12 @@ def ingest_entries(
         print(f"Wrote split PDFs: {output_dir / 'artifacts' / 'by_section'}")
     else:
         print("Skipped split PDF artifacts.")
+
+    if write_markdown:
+        if no_pdf_artifacts:
+            _reset_section_artifacts(output_dir)
+        write_section_markdown(ranges, texts)
+        print(f"Wrote section Markdown: {output_dir / 'artifacts' / 'by_section'}")
 
     print(f"Ingested {len(ranges)} sections from {len(entries)} TOC entries.")
     return len(ranges)

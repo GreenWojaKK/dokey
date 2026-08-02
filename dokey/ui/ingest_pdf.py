@@ -33,6 +33,7 @@ def run_ingest_auto_ui(
     section_depth: str = "auto",
     profile: str = "auto",
     write_items: bool = True,
+    write_markdown: bool = False,
 ) -> None:
     """Save the staged PDF and run the sequential ingest workflow.
 
@@ -63,6 +64,7 @@ def run_ingest_auto_ui(
         section_depth=section_depth,
         profile=profile,
         no_items=not write_items,
+        markdown=write_markdown,
         page_offset=None,
         toc=None,
         toc_format="auto",
@@ -144,7 +146,19 @@ def _pdf_ingest_form(pdf_upload) -> None:
         depth = _section_depth_input("auto_depth")
     with essentials[2]:
         profile = _language_profile_input("auto_profile")
-    write_items = _write_items_input("auto_items")
+    switches = st.columns(3)
+    with switches[0]:
+        write_items = _write_items_input("auto_items")
+    with switches[1]:
+        # Splitting a PDF yields PDFs; this asks for the same sections as text
+        # as well. It stands on its own line because it is a question about
+        # what to keep, not about how the document is read.
+        write_markdown = st.checkbox(
+            t("write_markdown"),
+            value=False,
+            key="auto_markdown",
+            help=t("write_markdown_help"),
+        )
     if pdf_upload is not None:
         _offer_preview("pdf", pdf_upload, depth, profile)
     if _run_button("auto_run", disabled=pdf_upload is None):
@@ -155,4 +169,5 @@ def _pdf_ingest_form(pdf_upload) -> None:
             depth,
             profile,
             write_items,
+            write_markdown,
         )

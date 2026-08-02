@@ -39,12 +39,47 @@ def copy_raw_pdf(input_path: Path, output_dir: Path) -> Path:
     return target
 
 
-def write_pages_jsonl(reader: PdfReader, output_path: Path) -> None:
+def page_texts(reader: PdfReader) -> list[str]:
+    """Every page's text, extracted once.
+
+    Two writers want the same read -- the bronze page stream and the per-
+    section Markdown -- and on a long document extracting twice is the most
+    expensive thing an ingest could do for nothing.
+    """
+    return [(page.extract_text() or "") for page in reader.pages]
+
+
+def write_pages_jsonl(
+    reader: PdfReader, output_path: Path, texts: list[str] | None = None
+) -> None:
+    if texts is None:
+        texts = page_texts(reader)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as output:
-        for index, page in enumerate(reader.pages, start=1):
-            text = page.extract_text() or ""
+        for index, text in enumerate(texts, start=1):
             output.write(json.dumps({"page": index, "text": text}, ensure_ascii=False) + "\n")
+
+
+def write_section_markdown(ranges: list[SectionRange], texts: list[str]) -> None:
+    """Per-section Markdown beside the split PDFs, cut from the text layer.
+
+    The same artifact a flow document gets, for a source that states pages:
+    each section's own pages, joined, under its title. It is written from the
+    text dokey already read, so it needs no converter and costs no second
+    pass -- and where a converter did read the document, the render it
+    produced is what the sections were cut from in the first place.
+    """
+    for item in ranges:
+        pages = texts[item.pdf_start_page - 1 : item.pdf_end_page]
+        body = "\n\n".join(page.strip() for page in pages if page.strip())
+        # A top-level section is its own parent; anything else sits one rung
+        # below the section it belongs to.
+        heading = "#" * (1 if item.parent == item.title else 2) + " " + item.title
+        out_path = Path(item.output_file).with_suffix(".md")
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(
+            f"{heading}\n\n{body}\n" if body else f"{heading}\n", encoding="utf-8"
+        )
 
 
 def write_split_pdfs(reader: PdfReader, ranges: list[SectionRange]) -> None:

@@ -125,6 +125,85 @@ class DokeyTests(unittest.TestCase):
             self.assertEqual(len(PdfReader(str(first_pdf)).pages), 2)
             self.assertEqual(len(PdfReader(str(last_pdf)).pages), 4)
 
+    def _split_lake(self, tmp_path: Path, *, markdown: bool) -> Path:
+        pdf_path = tmp_path / "report.pdf"
+        toc_path = tmp_path / "toc.txt"
+        output_dir = tmp_path / "lake"
+        writer = PdfWriter()
+        for _ in range(15):
+            writer.add_blank_page(width=72, height=72)
+        with pdf_path.open("wb") as output:
+            writer.write(output)
+        toc_path.write_text(TOC_TEXT, encoding="utf-8")
+        main(
+            [
+                "ingest",
+                "--input", str(pdf_path),
+                "--toc", str(toc_path),
+                "--output-dir", str(output_dir),
+                "--section-overlap", "0",
+            ]
+            + (["--markdown"] if markdown else [])
+        )
+        return output_dir
+
+    def test_markdown_artifacts_are_written_beside_the_split_pdfs(self) -> None:
+        """Splitting yields PDFs; asking for Markdown yields both, not either.
+
+        A section of a paged document has a natural artifact -- its pages --
+        and a natural second one: the same section as text, which is what a
+        reader downstream indexes or pastes into a prompt.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = self._split_lake(Path(tmp), markdown=True)
+            by_section = output_dir / "artifacts" / "by_section"
+            pdfs = sorted(by_section.rglob("*.pdf"))
+            markdowns = sorted(by_section.rglob("*.md"))
+            self.assertEqual(len(pdfs), 5)
+            self.assertEqual(
+                [path.stem for path in markdowns], [path.stem for path in pdfs]
+            )
+            intro = next(path for path in markdowns if path.stem == "Introduction")
+            # A child section is headed one rung below the part it belongs to.
+            self.assertTrue(
+                intro.read_text(encoding="utf-8").startswith("## Introduction"),
+                intro.read_text(encoding="utf-8")[:40],
+            )
+
+    def test_no_markdown_is_written_unless_it_is_asked_for(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = self._split_lake(Path(tmp), markdown=False)
+            by_section = output_dir / "artifacts" / "by_section"
+            self.assertTrue(list(by_section.rglob("*.pdf")))
+            self.assertEqual(list(by_section.rglob("*.md")), [])
+
+    def test_section_markdown_carries_the_pages_the_section_spans(self) -> None:
+        from dokey.pdf import write_section_markdown
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "lake"
+            entries = [
+                TocEntry(level=1, title="Alpha", page=1, parent="Alpha"),
+                TocEntry(level=1, title="Beta", page=3, parent="Alpha"),
+            ]
+            ranges = build_ranges(
+                entries, output_dir, total_pdf_pages=4,
+                pdf_page_offset=0, max_content_page=None, section_overlap=0,
+            )
+            write_section_markdown(
+                ranges, ["page one", "page two", "page three", "  "]
+            )
+            alpha = Path(ranges[0].output_file).with_suffix(".md")
+            beta = Path(ranges[1].output_file).with_suffix(".md")
+            # Alpha spans pages 1-2 and takes both; a blank page adds nothing.
+            self.assertEqual(
+                alpha.read_text(encoding="utf-8"),
+                "# Alpha\n\npage one\n\npage two\n",
+            )
+            self.assertEqual(
+                beta.read_text(encoding="utf-8"), "## Beta\n\npage three\n"
+            )
+
     def test_ingest_pipeline_can_use_pdf_outline(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

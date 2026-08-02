@@ -156,6 +156,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "its full address and offsets. Useful for extraction; skip it to "
             "keep the library small."
         ),
+        "write_markdown": "Also write each section as Markdown",
+        "write_markdown_help": (
+            "Splitting a PDF yields PDFs; this keeps the same sections as "
+            "text too, one .md beside each split PDF. It is cut from the "
+            "text dokey already read, so it needs no converter and costs no "
+            "second pass — and a PDF read through a converter is unitized "
+            "from its render, which produces these files either way."
+        ),
         "preview_toc": "Preview the table of contents",
         "preview_toc_help": (
             "Read the document and show the sections this setting would make, "
@@ -414,6 +422,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "silver/items.jsonl을 만듭니다 — 절 안의 번호 항목마다 전체 주소와 "
             "위치를 기록합니다. 추출 작업에 쓰이며, 라이브러리를 가볍게 두려면 "
             "끄십시오."
+        ),
+        "write_markdown": "절마다 마크다운도 저장",
+        "write_markdown_help": (
+            "PDF를 쪼개면 PDF가 나옵니다. 이 항목은 같은 절을 텍스트로도 "
+            "남깁니다 — 분할 PDF 옆에 .md 한 개씩. dokey가 이미 읽어 둔 "
+            "텍스트에서 잘라내므로 변환기가 필요 없고 다시 읽지도 않습니다. "
+            "변환기로 읽은 PDF는 그 변환 결과에서 절을 나누므로 어차피 이 "
+            "파일들이 생깁니다."
         ),
         "preview_toc": "목차 미리보기",
         "preview_toc_help": (

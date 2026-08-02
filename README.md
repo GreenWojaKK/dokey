@@ -25,11 +25,18 @@ lake/
   artifacts/
     by_section/
       Front_Matter.pdf            # a top-level section
+      Front_Matter.md             # …and the same section as text, with --markdown
       Front_Matter/               # …and its children, if it has any
         Editors_Corner.pdf
 ```
 
 `silver/sections.*` is the main contract. PDF files under `artifacts/` are derived artifacts. `gold/search.db` is the derived full-text search index, created by `dokey index` or on first `dokey search`.
+
+Splitting a PDF yields PDFs. `--markdown` (a toggle in the app) keeps the same
+sections as text as well — one `.md` beside each split PDF, cut from the text
+dokey already read, so it needs no converter and costs no second pass. Inputs
+that are not paged — Markdown, HWP, flow documents, spreadsheets — have no
+split PDFs and get these Markdown artifacts as their only per-section files.
 
 `silver/toc.jsonl` is the outline the ingest worked from — the embedded PDF
 outline, the printed contents page, the document's own numbered headings, or

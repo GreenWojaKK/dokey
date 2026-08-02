@@ -78,6 +78,7 @@ def ingest(args: argparse.Namespace) -> None:
         no_raw_copy=args.no_raw_copy,
         no_page_text=args.no_page_text,
         no_pdf_artifacts=args.no_pdf_artifacts,
+        write_markdown=getattr(args, "markdown", False),
     )
 
 
@@ -331,6 +332,7 @@ def _ingest_resolved(
         page_offset=page_offset,
         max_content_page=None,
         section_overlap=section_overlap,
+        write_markdown=getattr(args, "markdown", False),
     )
     stats = searchlib.ensure_index(output_dir)
     print(

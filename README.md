@@ -578,6 +578,21 @@ kept, and reading them is deferred to a BYO VLM — the same arm's-length seam
 as everywhere else. (`xlrd` does not expose drawings, so a legacy workbook
 says so in its notes rather than staying silent.)
 
+A part is not what a reader sees. A diagram drawn on a sheet — a vessel
+outline, the level inside it, the leader lines, the labels — is thirty shapes
+in the file and one drawing to the eye, and reading it part by part loses the
+only thing that made it legible. PowerPoint would call it a group, and where
+the author made one the file says so: a grouped drawing arrives as a single
+anchor. Nobody groups them. So `silver/sheet_figures.jsonl` assembles them:
+parts whose cell spans touch belong to the same figure, and each row carries
+the figure's span, how many parts it has, the shapes it is made of by the
+file's own names for their forms (`flowChartMagneticDisk`,
+`straightConnector1`), the words inside it, and the media it contains. Whether
+the file stated the unit or dokey read it off the geometry travels as `basis`
+(`declared` / `induced`), the same way a caption binding does. Nothing is
+collapsed away — `objects.jsonl` still holds every part, each naming the
+figure it belongs to.
+
 Whole numbers keep no decimal point they never had — both formats store every
 number as a float, and a price rendered as `1250000.0` reads as an error.
 Dates come out as dates by their declared number formats, CJK locale formats

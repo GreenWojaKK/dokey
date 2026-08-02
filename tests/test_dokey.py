@@ -3833,6 +3833,132 @@ class SpreadsheetTests(unittest.TestCase):
         self.assertEqual(by_kind["shape"]["text"], "결재란")
         self.assertEqual(by_kind["shape"]["anchor_ref"], "A13")
 
+    @staticmethod
+    def _drawn_xlsx(path: Path) -> Path:
+        """A sheet drawn the way people draw them: loose parts, no group.
+
+        A tank outline with a leader line and a label under it, and one
+        unrelated box far down the sheet.
+        """
+        def anchor(body: str, c0: int, r0: int, c1: int, r1: int) -> str:
+            return (
+                "<xdr:twoCellAnchor>"
+                f"<xdr:from><xdr:col>{c0}</xdr:col><xdr:row>{r0}</xdr:row></xdr:from>"
+                f"<xdr:to><xdr:col>{c1}</xdr:col><xdr:row>{r1}</xdr:row></xdr:to>"
+                f"{body}</xdr:twoCellAnchor>"
+            )
+
+        def shape(preset: str, text: str = "") -> str:
+            words = (
+                f"<xdr:txBody><a:p><a:r><a:t>{text}</a:t></a:r></a:p></xdr:txBody>"
+                if text
+                else ""
+            )
+            return (
+                f'<xdr:sp><xdr:spPr><a:prstGeom prst="{preset}"/></xdr:spPr>'
+                f"{words}</xdr:sp>"
+            )
+
+        drawing = (
+            '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" '
+            'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            + anchor(shape("flowChartMagneticDisk"), 14, 7, 20, 12)
+            + anchor(
+                '<xdr:cxnSp><xdr:spPr><a:prstGeom prst="straightConnector1"/>'
+                "</xdr:spPr></xdr:cxnSp>",
+                14, 10, 20, 11,
+            )
+            + anchor(shape("rect", "Test Pressure"), 14, 13, 18, 14)
+            + anchor(shape("rect", "Elsewhere"), 1, 40, 3, 42)
+            + "</xdr:wsDr>"
+        )
+        parts = {
+            "xl/workbook.xml": (
+                '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                '<sheets><sheet name="도면" sheetId="1" r:id="rId1"/></sheets></workbook>'
+            ),
+            "xl/_rels/workbook.xml.rels": (
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                '<Relationship Id="rId1" Type="w" Target="worksheets/sheet1.xml"/></Relationships>'
+            ),
+            "xl/worksheets/sheet1.xml": (
+                '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                '<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>점검</t></is></c>'
+                "</row></sheetData>"
+                '<drawing r:id="rId1"/></worksheet>'
+            ),
+            "xl/worksheets/_rels/sheet1.xml.rels": (
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                '<Relationship Id="rId1" Type="d" Target="../drawings/drawing1.xml"/>'
+                "</Relationships>"
+            ),
+            "xl/drawings/drawing1.xml": drawing,
+        }
+        with zipfile.ZipFile(path, "w") as archive:
+            for name, content in parts.items():
+                archive.writestr(name, content)
+        return path
+
+    def test_the_parts_of_one_drawing_are_read_as_one_figure(self) -> None:
+        """A reader sees a tank with its label, not three unrelated shapes.
+
+        PowerPoint would call that a group, and a grouped drawing arrives as
+        one anchor -- but nobody groups them, so the file states nothing and
+        the unit has to be read off the geometry: parts that touch belong
+        together, and parts a page apart do not.
+        """
+        from dokey import sheets
+
+        with tempfile.TemporaryDirectory() as tmp:
+            read = sheets.read_xlsx(self._drawn_xlsx(Path(tmp) / "도면.xlsx"))
+
+        figures = {row["ref"]: row for row in read.figures}
+        self.assertEqual(sorted(figures), ["B41:D43", "O8:U15"])
+
+        drawing = figures["O8:U15"]
+        self.assertEqual(drawing["parts"], 3)
+        self.assertEqual(drawing["basis"], "induced")
+        self.assertEqual(drawing["text"], ["Test Pressure"])
+        # The outline and the leader line carry no words; they are what the
+        # figure is made of, and they are named by the form the file gives.
+        self.assertEqual(
+            drawing["shapes"],
+            {"flowChartMagneticDisk": 1, "straightConnector1": 1, "rect": 1},
+        )
+        # A lone part is a unit the file itself states.
+        self.assertEqual(figures["B41:D43"]["basis"], "declared")
+
+        # Nothing is lost: every part is still recorded, naming its figure.
+        self.assertEqual(len(read.objects), 4)
+        by_ref = {row["anchor_ref"]: row for row in read.objects}
+        self.assertEqual(by_ref["O8"]["shape"], "flowChartMagneticDisk")
+        self.assertNotIn("text", by_ref["O8"])
+        self.assertEqual(by_ref["O8"]["figure"], "O8:U15")
+        self.assertEqual(by_ref["B41"]["figure"], "B41:D43")
+
+    def test_a_drawing_reaches_the_lake_as_a_figure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            book = self._drawn_xlsx(tmp_path / "도면.xlsx")
+            lake = tmp_path / "lake"
+
+            main(["auto", str(book), "--output-dir", str(lake)])
+
+            rows = [
+                json.loads(line)
+                for line in (lake / "silver" / "sheet_figures.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+                if line.strip()
+            ]
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(
+                [row["ref"] for row in rows], ["O8:U15", "B41:D43"]
+            )
+
     def test_a_native_workbook_builds_a_lake_with_its_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

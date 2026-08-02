@@ -97,6 +97,7 @@ class SheetReport:
     charts: int = 0
     images: int = 0
     shapes: int = 0
+    figures: int = 0
     empty_sheets: int = 0
     notes: list[str] = field(default_factory=list)
 
@@ -120,10 +121,13 @@ class SheetReport:
         if self.merges:
             parts.append(f"{self.merges} merge(s)")
         if self.charts or self.images or self.shapes:
-            parts.append(
+            drawn = (
                 f"objects: {self.charts} chart(s), {self.images} image(s), "
-                f"{self.shapes} text shape(s)"
+                f"{self.shapes} shape(s)"
             )
+            if self.figures:
+                drawn += f" assembled into {self.figures} figure(s)"
+            parts.append(drawn)
         if self.columns_dropped:
             parts.append(f"{self.columns_dropped} empty column(s) dropped")
         if self.empty_sheets:
@@ -149,6 +153,7 @@ class SheetReport:
             "charts": self.charts,
             "images": self.images,
             "shapes": self.shapes,
+            "figures": self.figures,
             "empty_sheets": self.empty_sheets,
             "notes": list(self.notes),
         }
@@ -624,6 +629,9 @@ class WorkbookRead:
     cells: list[dict] = field(default_factory=list)
     regions: list[dict] = field(default_factory=list)
     objects: list[dict] = field(default_factory=list)
+    # The drawn parts assembled into the figures a reader sees, one row per
+    # figure; ``objects`` keeps the parts themselves, each naming its figure.
+    figures: list[dict] = field(default_factory=list)
     media: dict[str, bytes] = field(default_factory=dict)
 
 
@@ -1101,6 +1109,107 @@ def _anchor_of(anchor_el) -> tuple[int | None, int | None, str | None]:
     return row, col, cell_ref(row, col)
 
 
+def _anchor_span(anchor_el) -> tuple[int, int, int, int] | None:
+    """The cells an anchor covers: (row0, col0, row1, col1), 1-based.
+
+    A one-cell anchor states only where it starts, so it spans that cell.
+    """
+    row, col, _ref = _anchor_of(anchor_el)
+    if row is None or col is None:
+        return None
+    to_el = anchor_el.find(f"{_XDR}to")
+    if to_el is None:
+        return row, col, row, col
+    col_el = to_el.find(f"{_XDR}col")
+    row_el = to_el.find(f"{_XDR}row")
+    end_row = int(row_el.text or 0) + 1 if row_el is not None else row
+    end_col = int(col_el.text or 0) + 1 if col_el is not None else col
+    return row, col, max(row, end_row), max(col, end_col)
+
+
+# Parts drawn within this many cells of each other read as one drawing. A
+# figure is assembled from pieces that touch or nearly touch -- a tank outline,
+# the level inside it, the leader lines to its labels -- while separate figures
+# on a sheet are set apart by whole blocks of cells. One cell of slack spans
+# the hairline gaps a mouse leaves behind without joining neighbours.
+FIGURE_GAP = 1
+
+
+def _touching(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> bool:
+    return (
+        a[0] - FIGURE_GAP <= b[2]
+        and b[0] - FIGURE_GAP <= a[2]
+        and a[1] - FIGURE_GAP <= b[3]
+        and b[1] - FIGURE_GAP <= a[3]
+    )
+
+
+def group_parts(parts: list[dict]) -> list[dict]:
+    """Assemble drawn parts into the figures a reader sees.
+
+    A person looking at a sheet does not see thirty shapes; they see three
+    tanks with their levels and labels. PowerPoint would call that a group,
+    and where the author made one the file says so -- a grouped drawing
+    arrives as a single anchor. Where the author drew the pieces loose, which
+    is the common case, nothing in the file states the unit and it has to be
+    read off the geometry: parts that touch belong to the same figure. The
+    verdict travels with the figure as ``basis``, so a consumer can tell what
+    the file stated from what dokey joined.
+    """
+    spans = [part["_span"] for part in parts]
+    owner = list(range(len(parts)))
+
+    def root(index: int) -> int:
+        while owner[index] != index:
+            owner[index] = owner[owner[index]]
+            index = owner[index]
+        return index
+
+    for first in range(len(parts)):
+        for second in range(first + 1, len(parts)):
+            if _touching(spans[first], spans[second]):
+                owner[root(first)] = root(second)
+
+    grouped: dict[int, list[int]] = {}
+    for index in range(len(parts)):
+        grouped.setdefault(root(index), []).append(index)
+
+    figures: list[dict] = []
+    for members in grouped.values():
+        rows = [parts[index] for index in members]
+        row0 = min(part["_span"][0] for part in rows)
+        col0 = min(part["_span"][1] for part in rows)
+        row1 = max(part["_span"][2] for part in rows)
+        col1 = max(part["_span"][3] for part in rows)
+        ref = cell_ref(row0, col0)
+        end_ref = cell_ref(row1, col1)
+        shapes: dict[str, int] = {}
+        for part in rows:
+            name = part.get("shape") or part["kind"]
+            shapes[name] = shapes.get(name, 0) + 1
+        figure = {
+            "sheet": rows[0]["sheet"],
+            "sheet_name": rows[0]["sheet_name"],
+            "kind": "figure",
+            "ref": ref if ref == end_ref else f"{ref}:{end_ref}",
+            "anchor_ref": ref,
+            "anchor_row": row0,
+            "anchor_col": col0,
+            # One anchor is a unit the file itself states -- a lone shape, or
+            # a group the author made. More than one is dokey's reading.
+            "basis": "declared" if len(rows) == 1 else "induced",
+            "parts": len(rows),
+            "shapes": shapes,
+            "text": [part["text"] for part in rows if part.get("text")],
+            "media": [part["media"] for part in rows if part.get("media")],
+        }
+        figures.append(figure)
+        for part in rows:
+            part["figure"] = figure["ref"]
+    figures.sort(key=lambda item: (item["anchor_row"], item["anchor_col"]))
+    return figures
+
+
 def _stash_media(media: dict[str, bytes], name: str, data: bytes) -> str:
     """Keep the bytes under a stable name, renaming only a true collision."""
     if name in media and media[name] != data:
@@ -1133,12 +1242,16 @@ def _drawing_objects(
         if anchor_el.tag not in _ANCHOR_TAGS:
             continue
         row, col, ref = _anchor_of(anchor_el)
+        span = _anchor_span(anchor_el)
+        if span is None:
+            continue
         record: dict = {
             "sheet": sheet_index,
             "sheet_name": sheet_name,
             "anchor_ref": ref,
             "anchor_row": row,
             "anchor_col": col,
+            "_span": span,
         }
         pic = anchor_el.find(f".//{_XDR}pic")
         chart_el = anchor_el.find(f".//{_CHART}chart")
@@ -1161,10 +1274,20 @@ def _drawing_objects(
             record.update(kind="image", media=f"artifacts/media/{name}")
             objects.append(record)
         else:
+            # A shape with no words is not nothing: the tank outline, the
+            # level inside it and the leader line to its label all say what
+            # they say by their form and their place. Recorded by the file's
+            # own vocabulary for the form -- the preset geometry name -- so
+            # the figure they belong to is assembled from every piece of it.
             text = _drawing_texts(anchor_el)
+            geometry = anchor_el.find(f".//{_DML}prstGeom")
+            record.update(
+                kind="shape",
+                shape=geometry.get("prst") if geometry is not None else "custom",
+            )
             if text:
-                record.update(kind="shape", text=text)
-                objects.append(record)
+                record["text"] = text
+            objects.append(record)
     return objects
 
 
@@ -1181,10 +1304,14 @@ def _read_objects(
         if not target:
             continue
         name = (grids[index - 1].name or "").strip() or f"Sheet {index}"
-        read.objects.extend(
-            _drawing_objects(archive, target, index, name, read.media)
-        )
+        parts = _drawing_objects(archive, target, index, name, read.media)
+        # Each sheet's drawing is assembled on its own: a figure is a thing on
+        # one sheet, and parts on different sheets never belong together.
+        read.figures.extend(group_parts(parts))
+        read.objects.extend(parts)
+    read.report.figures = len(read.figures)
     for record in read.objects:
+        record.pop("_span", None)
         if record["kind"] == "chart":
             read.report.charts += 1
         elif record["kind"] == "image":
@@ -1215,6 +1342,17 @@ def write_objects(output_dir: Path, objects: list[dict]) -> Path:
     path = silver / "objects.jsonl"
     with path.open("w", encoding="utf-8") as handle:
         for record in objects:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    return path
+
+
+def write_figures(output_dir: Path, figures: list[dict]) -> Path:
+    """The drawn parts as the drawings a reader sees, one row each."""
+    silver = Path(output_dir) / "silver"
+    silver.mkdir(parents=True, exist_ok=True)
+    path = silver / "sheet_figures.jsonl"
+    with path.open("w", encoding="utf-8") as handle:
+        for record in figures:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
     return path
 

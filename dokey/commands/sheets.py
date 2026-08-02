@@ -163,7 +163,15 @@ def _finish_sheet_lake(
         print(
             f"Wrote objects: {objects_path} "
             f"({read.report.charts} chart(s), {read.report.images} image(s), "
-            f"{read.report.shapes} text shape(s))"
+            f"{read.report.shapes} shape(s))"
+        )
+    if read.figures:
+        figures_path = sheetslib.write_figures(output_dir, read.figures)
+        induced = sum(1 for row in read.figures if row["basis"] == "induced")
+        print(
+            f"Wrote sheet figures: {figures_path} "
+            f"({len(read.figures)} figure(s), {induced} assembled from parts "
+            "the file left loose)"
         )
     if read.media:
         media_dir = sheetslib.write_media(output_dir, read.media)

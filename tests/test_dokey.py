@@ -4051,6 +4051,89 @@ class SpreadsheetTests(unittest.TestCase):
         self.assertIn('stroke="#FF0000"', svg)
         self.assertIn('fill="none" stroke="#FF0000"', svg)
 
+    @staticmethod
+    def _side_by_side_xlsx(path: Path) -> Path:
+        """Two drawings set side by side, each captioned, with a gutter."""
+        def panel(x: int, label: str, row_from: int, row_to: int) -> str:
+            return (
+                "<xdr:twoCellAnchor>"
+                f"<xdr:from><xdr:col>1</xdr:col><xdr:row>{row_from}</xdr:row></xdr:from>"
+                f"<xdr:to><xdr:col>9</xdr:col><xdr:row>{row_to}</xdr:row></xdr:to>"
+                f'<xdr:sp><xdr:spPr><a:xfrm><a:off x="{x}" y="100000"/>'
+                '<a:ext cx="1000000" cy="800000"/></a:xfrm>'
+                '<a:prstGeom prst="rect"/></xdr:spPr></xdr:sp></xdr:twoCellAnchor>'
+                "<xdr:twoCellAnchor>"
+                f"<xdr:from><xdr:col>1</xdr:col><xdr:row>{row_from}</xdr:row></xdr:from>"
+                f"<xdr:to><xdr:col>9</xdr:col><xdr:row>{row_to}</xdr:row></xdr:to>"
+                f'<xdr:sp><xdr:spPr><a:xfrm><a:off x="{x + 100000}" y="1000000"/>'
+                '<a:ext cx="800000" cy="200000"/></a:xfrm>'
+                '<a:prstGeom prst="rect"/></xdr:spPr>'
+                f"<xdr:txBody><a:p><a:r><a:t>{label}</a:t></a:r></a:p></xdr:txBody>"
+                "</xdr:sp></xdr:twoCellAnchor>"
+            )
+
+        drawing = (
+            '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" '
+            'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            # A gutter of 400000 EMU (42 px) between the two panels; each
+            # caption sits under its own drawing, well inside it.
+            + panel(200000, "left", 2, 12)
+            + panel(1600000, "right", 2, 12)
+            + "</xdr:wsDr>"
+        )
+        parts = {
+            "xl/workbook.xml": (
+                '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                '<sheets><sheet name="도면" sheetId="1" r:id="rId1"/></sheets></workbook>'
+            ),
+            "xl/_rels/workbook.xml.rels": (
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                '<Relationship Id="rId1" Type="w" Target="worksheets/sheet1.xml"/></Relationships>'
+            ),
+            "xl/worksheets/sheet1.xml": (
+                '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                '<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>비교</t></is></c>'
+                '</row></sheetData><drawing r:id="rId1"/></worksheet>'
+            ),
+            "xl/worksheets/_rels/sheet1.xml.rels": (
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                '<Relationship Id="rId1" Type="d" Target="../drawings/drawing1.xml"/>'
+                "</Relationships>"
+            ),
+            "xl/drawings/drawing1.xml": drawing,
+        }
+        with zipfile.ZipFile(path, "w") as archive:
+            for name, content in parts.items():
+                archive.writestr(name, content)
+        return path
+
+    def test_two_drawings_side_by_side_stay_two_and_stay_related(self) -> None:
+        """Touching gathers the pieces of a drawing and overreaches past it.
+
+        Panels set beside each other are chained together by whatever reaches
+        between them -- a caption under one ends where the next begins -- and
+        merging them asserts one drawing where the sheet has two. The corridor
+        between them says otherwise, so they are cut apart; being cut is not
+        being unrelated, so each panel names the series it came from.
+        """
+        from dokey import sheets
+
+        with tempfile.TemporaryDirectory() as tmp:
+            read = sheets.read_xlsx(self._side_by_side_xlsx(Path(tmp) / "비교.xlsx"))
+
+        self.assertEqual(len(read.figures), 2)
+        left, right = read.figures
+        self.assertEqual(left["text"], ["left"])
+        self.assertEqual(right["text"], ["right"])
+        # The relation the merge was reaching for, kept without the merge.
+        self.assertEqual(left["series"], right["series"])
+        self.assertEqual(left["series_size"], 2)
+        # Each panel is drawn on its own, so each can be looked at on its own.
+        self.assertNotEqual(left["drawing"], right["drawing"])
+
     def test_a_drawing_reaches_the_lake_as_a_figure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

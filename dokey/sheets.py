@@ -1136,6 +1136,62 @@ def _anchor_span(anchor_el) -> tuple[int, int, int, int] | None:
 FIGURE_GAP = 1
 
 
+# An empty band narrower than this many pixels is a hairline between pieces of
+# one drawing, not a gap between two. Measured against sheets where panels are
+# set side by side: the gutters there run 9 px and wider, while the parts of a
+# single drawing overlap and leave no band at all.
+PANEL_GAP_PX = 8
+_EMU_PER_PX = 9525
+
+
+def _corridors(parts: list[dict], axis: int) -> list[float]:
+    """Empty bands that no part crosses, in pixels, along one axis.
+
+    A band in the projection is a corridor across the whole drawing by
+    construction: if nothing's span covers it, nothing is drawn there.
+    """
+    spans = sorted(
+        (part["_off"][axis], part["_off"][axis] + part["_ext"][axis])
+        for part in parts
+    )
+    edges: list[float] = []
+    reach = spans[0][1]
+    for start, end in spans[1:]:
+        if start > reach and (start - reach) / _EMU_PER_PX >= PANEL_GAP_PX:
+            edges.append(start)
+        reach = max(reach, end)
+    return edges
+
+
+def split_panels(parts: list[dict]) -> list[list[dict]]:
+    """Cut a cluster where a corridor says one drawing ends and the next begins.
+
+    Parts that touch are gathered first, which is right for the pieces of a
+    drawing and wrong for two drawings set side by side -- a caption under one
+    reaches the edge of the other, and the chain swallows both. So a gathered
+    cluster is cut again along the axis it repeats on: the empty bands running
+    the full height (or width) of it are where a reader sees one panel end.
+
+    The cut is made once, on one axis. What is left inside a panel -- a
+    caption below its drawing, an arrow into it -- is the panel's content, not
+    the next panel: cutting again on the other axis would take every drawing
+    away from the words naming it.
+    """
+    placed = [part for part in parts if part.get("_off") and part.get("_ext")]
+    if len(placed) < 2 or len(placed) != len(parts):
+        return [parts]
+    vertical = _corridors(placed, 0)
+    horizontal = _corridors(placed, 1)
+    if not vertical and not horizontal:
+        return [parts]
+    axis, edges = (0, vertical) if len(vertical) >= len(horizontal) else (1, horizontal)
+    panels: list[list[dict]] = [[] for _ in range(len(edges) + 1)]
+    for part in parts:
+        index = sum(1 for edge in edges if part["_off"][axis] >= edge)
+        panels[index].append(part)
+    return [panel for panel in panels if panel]
+
+
 def _touching(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> bool:
     return (
         a[0] - FIGURE_GAP <= b[2]
@@ -1156,6 +1212,13 @@ def group_parts(parts: list[dict]) -> list[dict]:
     read off the geometry: parts that touch belong to the same figure. The
     verdict travels with the figure as ``basis``, so a consumer can tell what
     the file stated from what dokey joined.
+
+    Touching alone is too coarse to stop at. Two drawings set side by side are
+    chained together by whatever reaches between them, and merging them
+    asserts one thing where there are two. So a gathered cluster is cut again
+    at its corridors, and what the cut separates is not thrown apart: each
+    panel records the ``series`` it was cut from, which is the relation the
+    merge was reaching for -- these belong together, and they are still two.
     """
     spans = [part["_span"] for part in parts]
     owner = list(range(len(parts)))
@@ -1175,39 +1238,55 @@ def group_parts(parts: list[dict]) -> list[dict]:
     for index in range(len(parts)):
         grouped.setdefault(root(index), []).append(index)
 
+    def _extent(rows: list[dict]) -> str:
+        start = cell_ref(
+            min(part["_span"][0] for part in rows),
+            min(part["_span"][1] for part in rows),
+        )
+        end = cell_ref(
+            max(part["_span"][2] for part in rows),
+            max(part["_span"][3] for part in rows),
+        )
+        return start if start == end else f"{start}:{end}"
+
     figures: list[dict] = []
-    for members in grouped.values():
-        rows = [parts[index] for index in members]
-        row0 = min(part["_span"][0] for part in rows)
-        col0 = min(part["_span"][1] for part in rows)
-        row1 = max(part["_span"][2] for part in rows)
-        col1 = max(part["_span"][3] for part in rows)
-        ref = cell_ref(row0, col0)
-        end_ref = cell_ref(row1, col1)
-        shapes: dict[str, int] = {}
-        for part in rows:
-            name = part.get("shape") or part["kind"]
-            shapes[name] = shapes.get(name, 0) + 1
-        figure = {
-            "sheet": rows[0]["sheet"],
-            "sheet_name": rows[0]["sheet_name"],
-            "kind": "figure",
-            "ref": ref if ref == end_ref else f"{ref}:{end_ref}",
-            "anchor_ref": ref,
-            "anchor_row": row0,
-            "anchor_col": col0,
-            # One anchor is a unit the file itself states -- a lone shape, or
-            # a group the author made. More than one is dokey's reading.
-            "basis": "declared" if len(rows) == 1 else "induced",
-            "parts": len(rows),
-            "shapes": shapes,
-            "text": [part["text"] for part in rows if part.get("text")],
-            "media": [part["media"] for part in rows if part.get("media")],
-        }
-        figures.append(figure)
-        figure["_parts"] = rows
-        for part in rows:
-            part["figure"] = figure["ref"]
+    clusters = [[parts[index] for index in members] for members in grouped.values()]
+    for cluster in clusters:
+        series_ref = _extent(cluster)
+        panels = split_panels(cluster)
+        for rows in panels:
+            row0 = min(part["_span"][0] for part in rows)
+            col0 = min(part["_span"][1] for part in rows)
+            ref = _extent(rows)
+            shapes: dict[str, int] = {}
+            for part in rows:
+                name = part.get("shape") or part["kind"]
+                shapes[name] = shapes.get(name, 0) + 1
+            figure = {
+                "sheet": rows[0]["sheet"],
+                "sheet_name": rows[0]["sheet_name"],
+                "kind": "figure",
+                "ref": ref,
+                "anchor_ref": cell_ref(row0, col0),
+                "anchor_row": row0,
+                "anchor_col": col0,
+                # One anchor is a unit the file itself states -- a lone shape,
+                # or a group the author made. More than one is dokey's reading.
+                "basis": "declared" if len(rows) == 1 else "induced",
+                "parts": len(rows),
+                "shapes": shapes,
+                "text": [part["text"] for part in rows if part.get("text")],
+                "media": [part["media"] for part in rows if part.get("media")],
+            }
+            if len(panels) > 1:
+                # Cut apart, but not sent apart: the panels of one series sit
+                # together on the sheet and are read against each other.
+                figure["series"] = series_ref
+                figure["series_size"] = len(panels)
+            figures.append(figure)
+            figure["_parts"] = rows
+            for part in rows:
+                part["figure"] = figure["ref"]
     figures.sort(key=lambda item: (item["anchor_row"], item["anchor_col"]))
     return figures
 

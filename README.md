@@ -593,6 +593,19 @@ the file stated the unit or dokey read it off the geometry travels as `basis`
 collapsed away — `objects.jsonl` still holds every part, each naming the
 figure it belongs to.
 
+Touching is where the gathering starts, not where it stops. Two drawings set
+side by side are chained together by whatever reaches between them — a
+caption under one ends where the next begins — and merging them asserts one
+drawing where the sheet has two. So a gathered cluster is cut again at its
+**corridors**: the empty bands that run its full height (or width) and that
+no part crosses, which is where a reader sees one panel end. The cut is made
+once, on the axis the drawing repeats along; what remains inside a panel — a
+caption below its drawing, an arrow into it — is that panel's content, since
+cutting on the other axis too would take every drawing away from the words
+naming it. Being cut apart is not being unrelated: each panel records the
+`series` it came from and how many panels that series holds, which is the
+relation the merge was reaching for.
+
 A figure that exists only as a list of parts still cannot be *looked* at, by
 a person or by a model, so each one is drawn back out to
 `artifacts/media/figure_<sheet>_<span>.svg` and named on its row. This is

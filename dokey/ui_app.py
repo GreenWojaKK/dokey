@@ -15,7 +15,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from dokey import search as searchlib
-from dokey.ui.common import _active_project_root, t
+from dokey.ui.common import _active_project_root, ingest_notice, t
 from dokey.ui.ingest import import_open, import_view
 from dokey.ui.library import _MARK_CSS, browse_sections, result_card
 from dokey.ui.navigation import PROJECT_CSS, sidebar as _render_sidebar
@@ -68,12 +68,7 @@ with st.sidebar:
 importing = import_open() or active_lake is None
 clear_preview()
 
-if active_lake is None:
-    active_project = _active_project_root()
-    st.subheader(active_project.name)
-    st.caption(str(active_project))
-    st.info(t("project_empty_main"))
-else:
+if not importing:
     st.subheader(active_lake.name)
     try:
         active_relative = active_lake.relative_to(_active_project_root()).as_posix()
@@ -86,6 +81,14 @@ else:
             path=active_relative,
         )
     )
+    # An ingest that just finished lands here: this library is its result, and
+    # the notice under the name is what the form could not say before rerunning.
+    ingest_notice()
+elif active_lake is None:
+    active_project = _active_project_root()
+    st.subheader(active_project.name)
+    st.caption(str(active_project))
+    st.info(t("project_empty_main"))
 
 query = (
     ""

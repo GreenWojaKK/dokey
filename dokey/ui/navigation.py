@@ -12,7 +12,7 @@ from dokey import pickers as pickerslib
 from dokey import search as searchlib
 from dokey import workspace as workspacelib
 from dokey.ui.common import t
-from dokey.ui.ingest import import_control
+from dokey.ui.ingest import import_control, import_open
 from dokey.ui.preview import clear_preview
 from dokey.ui.settings import backend_panel, language_selector
 
@@ -118,9 +118,15 @@ def _activate_project(project: Path) -> None:
 
 
 def _activate_lake(project: Path, lake: Path) -> None:
+    # Choosing a library is asking to look at one, so it ends an import in
+    # progress rather than leaving the form open over a library the user has
+    # just navigated away from. (Choosing a *project* does not: the import
+    # form names the project it would write to, so switching there retargets
+    # the import instead of abandoning it.)
     st.session_state["_active_project"] = str(project)
     st.session_state["_active_lake"] = str(lake)
     st.session_state.pop("query", None)
+    st.session_state["_import_open"] = False
     clear_preview()
     workspacelib.remember_lake(project, lake)
 
@@ -232,12 +238,18 @@ def pick_lake(cli_lake: Path | None) -> Path | None:
     if not lakes:
         st.info(t("project_empty"))
     else:
-        active_lake = _matching_path(
-            st.session_state.get("_active_lake"),
-            lakes,
+        # A library that was just built is an instruction, the same as
+        # clicking its row, so it outranks the remembered selection: the app
+        # lands on it in this run instead of showing the previous library
+        # once more and moving only on the next interaction.
+        active_lake = (
+            _matching_path(new_lake, lakes) if new_lake is not None else None
         )
-        if active_lake is None and new_lake is not None:
-            active_lake = _matching_path(new_lake, lakes)
+        if active_lake is None:
+            active_lake = _matching_path(
+                st.session_state.get("_active_lake"),
+                lakes,
+            )
         if active_lake is None and cli_lake is not None:
             active_lake = _matching_path(cli_lake, lakes)
         if active_lake is None:
@@ -260,7 +272,10 @@ def pick_lake(cli_lake: Path | None) -> Path | None:
             )
             st.caption(folder_label)
             for lake in folder_lakes:
-                selected = _path_key(lake) == _path_key(active_lake)
+                selected = (
+                    not import_open()
+                    and _path_key(lake) == _path_key(active_lake)
+                )
                 if st.button(
                     lake.name,
                     key=_widget_key(_NAV_PREFIXES[1], lake),
@@ -307,8 +322,8 @@ def sidebar(cli_lake: Path | None) -> tuple[Path | None, int]:
         icon=":material/translate:",
     ):
         language_selector()
-    if lake is None:
-        return None, 10
+    if lake is None or import_open():
+        return lake, 10
     try:
         with st.spinner(t("building_search_index")):
             stats = searchlib.ensure_index(lake)

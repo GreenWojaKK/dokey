@@ -20,6 +20,7 @@ from dokey.ui.common import (
     _run_button,
     _section_depth_input,
     _write_items_input,
+    finish_ingest,
     t,
 )
 from dokey.ui.preview import _offer_preview
@@ -100,11 +101,7 @@ def run_ingest_auto_ui(
         _report_failure("ingest_error", exc, log, trace=traceback.format_exc())
         return
 
-    st.success(t("ingested", path=out_dir))
-    with st.expander(t("ingest_log"), expanded=False):
-        st.code(log.getvalue() or t("no_output"))
-    st.session_state["_new_lake"] = str(out_dir)
-    st.rerun()
+    finish_ingest(out_dir, log)
 
 
 def _reader_options() -> list[tuple[str | None, str]]:

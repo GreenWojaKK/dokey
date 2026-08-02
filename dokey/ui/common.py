@@ -41,6 +41,37 @@ def _report_failure(
     st.code("\n\n".join(parts) or t("no_output"))
 
 
+def finish_ingest(out_dir: Path, log) -> None:
+    """End a successful ingest: close the import view, land on the library.
+
+    An import that succeeded is over, and what the user asked for now exists,
+    so the app leaves the form and goes to the library it just made -- which
+    is both the result and the proof that it worked. The run's own output
+    travels across the rerun in session state: printed here it would be
+    discarded a line later, and it carries every decision the ingest made.
+    """
+    st.session_state["_ingest_done"] = {
+        "lake": str(out_dir),
+        "log": log.getvalue().strip(),
+    }
+    st.session_state["_new_lake"] = str(out_dir)
+    st.session_state["_import_open"] = False
+    # The document has been added; leaving it staged would hand the next
+    # import a form already filled with the book that is now on the shelf.
+    st.session_state.pop("_ingest_local_file", None)
+    st.rerun()
+
+
+def ingest_notice() -> None:
+    """Report the last ingest once, on the library it produced."""
+    done = st.session_state.pop("_ingest_done", None)
+    if not done:
+        return
+    st.success(t("ingested", path=done["lake"]))
+    with st.expander(t("ingest_log"), expanded=False):
+        st.code(done["log"] or t("no_output"))
+
+
 def _active_project_root() -> Path:
     """Return the project that receives new imports."""
     value = st.session_state.get("_active_project")

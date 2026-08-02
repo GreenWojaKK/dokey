@@ -922,6 +922,134 @@ class UiIngestPanelTests(unittest.TestCase):
                 else:
                     os.environ["DOKEY_CONFIG_DIR"] = previous_config
 
+    def test_add_book_hides_the_active_book_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            previous_cwd = Path.cwd()
+            previous_config = os.environ.get("DOKEY_CONFIG_DIR")
+            os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
+            os.chdir(tmp_path)
+            try:
+                app = self._app(tmp_path).run()
+                lake_key = next(
+                    widget.key
+                    for widget in app.sidebar.button
+                    if str(widget.key).startswith("nav_lake_")
+                )
+                self.assertEqual(app.sidebar.button(key=lake_key).proto.type, "primary")
+
+                app.button(key="import_open").click().run()
+
+                self.assertFalse(app.exception)
+                self.assertNotIn("lake", [item.value for item in app.subheader])
+                self.assertEqual(
+                    app.sidebar.button(key=lake_key).proto.type,
+                    "secondary",
+                )
+                sidebar_buttons = {widget.key for widget in app.sidebar.button}
+                self.assertIn("import_close", sidebar_buttons)
+                self.assertNotIn("rebuild", sidebar_buttons)
+            finally:
+                os.chdir(previous_cwd)
+                if previous_config is None:
+                    os.environ.pop("DOKEY_CONFIG_DIR", None)
+                else:
+                    os.environ["DOKEY_CONFIG_DIR"] = previous_config
+
+    def test_a_finished_ingest_lands_on_the_library_it_made(self) -> None:
+        """Arriving at the new library is the notice that the ingest worked.
+
+        Before this, a finished ingest left the form standing with the same
+        document still chosen and nothing said: the success line was drawn
+        and then discarded by the rerun a line later, and the library that
+        had just been built appeared in the sidebar unhighlighted, while the
+        pane went on naming the library the user had left.
+        """
+        from dokey import pickers
+
+        if not pickers.HAS_FILE_PICKER:
+            self.skipTest("tkinter not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            previous_cwd = Path.cwd()
+            previous_config = os.environ.get("DOKEY_CONFIG_DIR")
+            os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
+            os.chdir(tmp_path)
+            try:
+                document = tmp_path / "report.md"
+                document.write_text(
+                    "# First clause\n\nBody text of the first clause.\n\n"
+                    "# Second clause\n\nBody text of the second clause.\n",
+                    encoding="utf-8",
+                )
+                app = self._importing(tmp_path)
+                app.session_state["_ingest_local_file"] = str(document)
+                app.run()
+                app.button(key="md_run").click().run()
+                self.assertFalse(app.exception)
+
+                self.assertFalse(app.session_state["_import_open"])
+                self.assertIn("report", [item.value for item in app.subheader])
+                self.assertTrue(app.success)
+                made = next(
+                    widget
+                    for widget in app.sidebar.button
+                    if str(widget.key).startswith("nav_lake_")
+                    and widget.label == "report"
+                )
+                self.assertEqual(made.proto.type, "primary")
+                # The ingest's own output survives the rerun that discarded it.
+                logged = "\n".join(item.value for item in app.code)
+                self.assertIn("Wrote", logged)
+                # Said once: the notice is consumed by the page that shows it,
+                # so the next run of the library is not still announcing it.
+                self.assertNotIn("_ingest_done", app.session_state)
+            finally:
+                os.chdir(previous_cwd)
+                if previous_config is None:
+                    os.environ.pop("DOKEY_CONFIG_DIR", None)
+                else:
+                    os.environ["DOKEY_CONFIG_DIR"] = previous_config
+
+    def test_choosing_a_library_ends_an_import_in_progress(self) -> None:
+        """A library row is a request to look at one, not a silent setting.
+
+        With the import view open the rows stop being highlighted, so a click
+        that only changed the stored selection would leave the screen exactly
+        as it was and the form standing over a library nobody is looking at.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            previous_cwd = Path.cwd()
+            previous_config = os.environ.get("DOKEY_CONFIG_DIR")
+            os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
+            os.chdir(tmp_path)
+            try:
+                write_search_lake(tmp_path / "second")
+                app = self._importing(tmp_path)
+                self.assertFalse(app.exception)
+                other = next(
+                    widget
+                    for widget in app.sidebar.button
+                    if str(widget.key).startswith("nav_lake_")
+                    and widget.label == "second"
+                )
+
+                app.sidebar.button(key=other.key).click().run()
+
+                self.assertFalse(app.exception)
+                self.assertFalse(app.session_state["_import_open"])
+                self.assertIn("second", [item.value for item in app.subheader])
+                self.assertEqual(
+                    app.sidebar.button(key=other.key).proto.type, "primary"
+                )
+            finally:
+                os.chdir(previous_cwd)
+                if previous_config is None:
+                    os.environ.pop("DOKEY_CONFIG_DIR", None)
+                else:
+                    os.environ["DOKEY_CONFIG_DIR"] = previous_config
+
     def test_the_pdf_form_asks_once_and_reads_the_rest_from_the_document(
         self,
     ) -> None:

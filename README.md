@@ -593,6 +593,18 @@ the file stated the unit or dokey read it off the geometry travels as `basis`
 collapsed away — `objects.jsonl` still holds every part, each naming the
 figure it belongs to.
 
+A figure that exists only as a list of parts still cannot be *looked* at, by
+a person or by a model, so each one is drawn back out to
+`artifacts/media/figure_<sheet>_<span>.svg` and named on its row. This is
+transcription, not rendering: every part states its position and size on the
+sheet's own canvas, a custom form states its path outright, and fills, shaded
+stops and outlines are all stated too, so the drawing is put back together
+from the file's own numbers — no office suite, no BYO renderer, nothing to
+install. A preset form dokey has no formula for is drawn as its bounding box
+and counted in `boxed_parts`, so an approximation is never mistaken for the
+original. Pictures inside a figure are referenced by name from the same
+folder, which puts a photo and the boxes drawn over it back in one image.
+
 Whole numbers keep no decimal point they never had — both formats store every
 number as a float, and a price rendered as `1250000.0` reads as an error.
 Dates come out as dates by their declared number formats, CJK locale formats

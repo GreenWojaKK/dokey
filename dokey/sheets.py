@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import BinaryIO
 from xml.etree import ElementTree
 
+from . import sheetdraw
 from .mdunit import Section
 
 SPREADSHEET_SUFFIXES = frozenset({".xlsx", ".xlsm", ".xlsb", ".xls", ".ods"})
@@ -1204,10 +1205,121 @@ def group_parts(parts: list[dict]) -> list[dict]:
             "media": [part["media"] for part in rows if part.get("media")],
         }
         figures.append(figure)
+        figure["_parts"] = rows
         for part in rows:
             part["figure"] = figure["ref"]
     figures.sort(key=lambda item: (item["anchor_row"], item["anchor_col"]))
     return figures
+
+
+def draw_figures(figures: list[dict], media: dict[str, bytes]) -> None:
+    """Put each figure back together as a picture, beside the media it holds.
+
+    A drawing that exists only as parts cannot be looked at -- not by a
+    person, not by a model. It is stored as geometry, so it is redrawn from
+    geometry: an SVG next to the pictures it embeds, which it references by
+    name because they sit in the same folder.
+    """
+    for figure in figures:
+        parts = figure.pop("_parts", [])
+        svg, drawn, boxed = sheetdraw.figure_svg(parts)
+        if not svg:
+            continue
+        safe = figure["ref"].replace(":", "-")
+        name = _stash_media(
+            media, f"figure_s{figure['sheet']}_{safe}.svg", svg.encode("utf-8")
+        )
+        figure["drawing"] = f"artifacts/media/{name}"
+        # An approximated part is one this drawing had no formula for; saying
+        # so is what keeps the picture from being read as the original.
+        figure["drawn_parts"] = drawn
+        if boxed:
+            figure["boxed_parts"] = boxed
+
+
+def _drawn_geometry(anchor_el) -> dict:
+    """What the file says about how this part is drawn, for redrawing it.
+
+    Position and size are absolute on the sheet's own canvas, so a figure can
+    be put back together from them without consulting a single column width.
+    A custom form states its path outright; a preset states its name. Colours
+    come from the first solid fill and the outline beside it.
+    """
+    detail: dict = {}
+    xfrm = anchor_el.find(f".//{_DML}xfrm")
+    if xfrm is not None:
+        off = xfrm.find(f"{_DML}off")
+        ext = xfrm.find(f"{_DML}ext")
+        if off is not None and ext is not None:
+            try:
+                detail["_off"] = (int(off.get("x") or 0), int(off.get("y") or 0))
+                detail["_ext"] = (int(ext.get("cx") or 0), int(ext.get("cy") or 0))
+            except ValueError:
+                pass
+    # The fill is the shape's own, a direct child of its properties. Searching
+    # the subtree for one finds the outline's colour instead -- a red-edged
+    # annotation box comes back as a solid red block, painted over what it was
+    # drawn to point at.
+    shape_props = anchor_el.find(f".//{_XDR}spPr")
+    if shape_props is not None:
+        fill = shape_props.find(f"{_DML}solidFill/{_DML}srgbClr")
+        if fill is not None and fill.get("val"):
+            detail["_fill"] = fill.get("val")
+        # A shaded fill states its stops -- position, colour, transparency --
+        # and a level drawn with one is shaded for a reason. Stops in theme
+        # colours are left out: the theme is a separate part, and a guessed
+        # colour would be an invention rather than a reading.
+        stops: list[tuple[float, str, float]] = []
+        for stop in shape_props.findall(f"{_DML}gradFill/{_DML}gsLst/{_DML}gs"):
+            colour = stop.find(f"{_DML}srgbClr")
+            if colour is None or not colour.get("val"):
+                continue
+            alpha = colour.find(f"{_DML}alpha")
+            try:
+                position = int(stop.get("pos") or 0) / 100000
+                opacity = int(alpha.get("val")) / 100000 if alpha is not None else 1.0
+            except (TypeError, ValueError):
+                continue
+            stops.append((position, colour.get("val"), opacity))
+        if stops:
+            detail["_grad"] = stops
+        line = shape_props.find(f"{_DML}ln")
+        if line is not None:
+            stroke = line.find(f"{_DML}solidFill/{_DML}srgbClr")
+            if stroke is not None and stroke.get("val"):
+                detail["_line"] = stroke.get("val")
+            try:
+                detail["_line_w"] = int(line.get("w") or 0) or None
+            except ValueError:
+                pass
+    size = anchor_el.find(f".//{_DML}rPr")
+    if size is not None and size.get("sz"):
+        try:
+            detail["_font"] = max(6, int(size.get("sz")) // 100)
+        except ValueError:
+            pass
+    path_el = anchor_el.find(f".//{_DML}custGeom//{_DML}path")
+    if path_el is not None:
+        try:
+            detail["_path_w"] = int(path_el.get("w") or 0)
+            detail["_path_h"] = int(path_el.get("h") or 0)
+        except ValueError:
+            detail["_path_w"] = detail["_path_h"] = 0
+        commands: list[tuple[str, list[tuple[int, int]]]] = []
+        for step in path_el:
+            verb = step.tag.rpartition("}")[2]
+            points = []
+            for point in step.findall(f"{_DML}pt"):
+                try:
+                    points.append((int(point.get("x") or 0), int(point.get("y") or 0)))
+                except ValueError:
+                    points = []
+                    break
+            if verb == "close" or points:
+                commands.append((verb, points))
+        if commands:
+            detail["_path"] = commands
+    return detail
 
 
 def _stash_media(media: dict[str, bytes], name: str, data: bytes) -> str:
@@ -1253,6 +1365,7 @@ def _drawing_objects(
             "anchor_col": col,
             "_span": span,
         }
+        record.update(_drawn_geometry(anchor_el))
         pic = anchor_el.find(f".//{_XDR}pic")
         chart_el = anchor_el.find(f".//{_CHART}chart")
         if chart_el is not None:
@@ -1307,7 +1420,9 @@ def _read_objects(
         parts = _drawing_objects(archive, target, index, name, read.media)
         # Each sheet's drawing is assembled on its own: a figure is a thing on
         # one sheet, and parts on different sheets never belong together.
-        read.figures.extend(group_parts(parts))
+        figures = group_parts(parts)
+        draw_figures(figures, read.media)
+        read.figures.extend(figures)
         read.objects.extend(parts)
     read.report.figures = len(read.figures)
     for record in read.objects:

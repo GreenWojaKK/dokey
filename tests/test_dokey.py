@@ -3939,6 +3939,118 @@ class SpreadsheetTests(unittest.TestCase):
         self.assertEqual(by_ref["O8"]["figure"], "O8:U15")
         self.assertEqual(by_ref["B41"]["figure"], "B41:D43")
 
+    @staticmethod
+    def _drawn_xlsx_with_geometry(path: Path) -> Path:
+        """A vessel with a shaded level and a red-edged annotation box."""
+        drawing = (
+            '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" '
+            'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            "<xdr:twoCellAnchor>"
+            "<xdr:from><xdr:col>2</xdr:col><xdr:row>2</xdr:row></xdr:from>"
+            "<xdr:to><xdr:col>6</xdr:col><xdr:row>10</xdr:row></xdr:to>"
+            '<xdr:sp><xdr:spPr><a:xfrm><a:off x="952500" y="476250"/>'
+            '<a:ext cx="1905000" cy="1905000"/></a:xfrm>'
+            '<a:prstGeom prst="flowChartMagneticDisk"/>'
+            "</xdr:spPr></xdr:sp></xdr:twoCellAnchor>"
+            # The level: a shaded fill, whose stops the file states.
+            "<xdr:twoCellAnchor>"
+            "<xdr:from><xdr:col>2</xdr:col><xdr:row>6</xdr:row></xdr:from>"
+            "<xdr:to><xdr:col>6</xdr:col><xdr:row>10</xdr:row></xdr:to>"
+            '<xdr:sp><xdr:spPr><a:xfrm><a:off x="952500" y="1428750"/>'
+            '<a:ext cx="1905000" cy="952500"/></a:xfrm>'
+            '<a:custGeom><a:pathLst><a:path w="100" h="100">'
+            '<a:moveTo><a:pt x="0" y="0"/></a:moveTo>'
+            '<a:lnTo><a:pt x="100" y="0"/></a:lnTo>'
+            '<a:lnTo><a:pt x="100" y="100"/></a:lnTo>'
+            "<a:close/></a:path></a:pathLst></a:custGeom>"
+            '<a:gradFill><a:gsLst>'
+            '<a:gs pos="0"><a:srgbClr val="996600"><a:alpha val="70000"/>'
+            "</a:srgbClr></a:gs>"
+            '<a:gs pos="100000"><a:srgbClr val="663300"/></a:gs>'
+            "</a:gsLst></a:gradFill>"
+            '<a:ln><a:solidFill><a:srgbClr val="996633"/></a:solidFill></a:ln>'
+            "</xdr:spPr></xdr:sp></xdr:twoCellAnchor>"
+            # The annotation: no fill of its own, a red outline.
+            "<xdr:twoCellAnchor>"
+            "<xdr:from><xdr:col>2</xdr:col><xdr:row>3</xdr:row></xdr:from>"
+            "<xdr:to><xdr:col>4</xdr:col><xdr:row>5</xdr:row></xdr:to>"
+            '<xdr:sp><xdr:spPr><a:xfrm><a:off x="1000000" y="700000"/>'
+            '<a:ext cx="500000" cy="400000"/></a:xfrm>'
+            '<a:prstGeom prst="rect"/><a:noFill/>'
+            '<a:ln w="19050"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill>'
+            "</a:ln></xdr:spPr></xdr:sp></xdr:twoCellAnchor>"
+            "</xdr:wsDr>"
+        )
+        parts = {
+            "xl/workbook.xml": (
+                '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                '<sheets><sheet name="도면" sheetId="1" r:id="rId1"/></sheets></workbook>'
+            ),
+            "xl/_rels/workbook.xml.rels": (
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                '<Relationship Id="rId1" Type="w" Target="worksheets/sheet1.xml"/></Relationships>'
+            ),
+            "xl/worksheets/sheet1.xml": (
+                '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                '<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>탱크</t></is></c>'
+                "</row></sheetData><drawing r:id=\"rId1\"/></worksheet>"
+            ),
+            "xl/worksheets/_rels/sheet1.xml.rels": (
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                '<Relationship Id="rId1" Type="d" Target="../drawings/drawing1.xml"/>'
+                "</Relationships>"
+            ),
+            "xl/drawings/drawing1.xml": drawing,
+        }
+        with zipfile.ZipFile(path, "w") as archive:
+            for name, content in parts.items():
+                archive.writestr(name, content)
+        return path
+
+    def test_a_figure_is_drawn_back_from_the_geometry_the_file_states(self) -> None:
+        """A drawing kept only as parts cannot be looked at, by anyone.
+
+        The file states where each part sits, how big it is, what form it
+        takes and what colours it -- so the figure is put back together from
+        that, as SVG, and lands in media beside the pictures it holds.
+        """
+        from xml.etree import ElementTree
+
+        from dokey import sheets
+
+        with tempfile.TemporaryDirectory() as tmp:
+            read = sheets.read_xlsx(
+                self._drawn_xlsx_with_geometry(Path(tmp) / "탱크.xlsx")
+            )
+
+        figure = read.figures[0]
+        self.assertEqual(figure["parts"], 3)
+        drawing = figure["drawing"]
+        self.assertTrue(drawing.endswith(".svg"), drawing)
+        self.assertNotIn("boxed_parts", figure)  # every form was drawable
+
+        svg = read.media[drawing.rpartition("/")[2]].decode("utf-8")
+        # Valid SVG: one fill per shape. Stating it twice makes the whole
+        # file unrenderable, which is how a viewer reports it and how this
+        # was caught.
+        for element in svg.split("<")[1:]:
+            self.assertLessEqual(element.count('fill="'), 1, element[:80])
+        ElementTree.fromstring(svg)  # parses, or the drawing is not a drawing
+
+        # The vessel is drawn as a cylinder, not as its bounding box.
+        self.assertIn("<ellipse", svg)
+        # The shaded level is transcribed stop by stop, not flattened.
+        self.assertIn("<linearGradient", svg)
+        self.assertIn('stop-color="#996600"', svg)
+        self.assertIn('stop-opacity="0.7"', svg)
+        # The annotation box keeps its red edge and stays see-through: a
+        # filled one would paint over the very thing it points at.
+        self.assertIn('stroke="#FF0000"', svg)
+        self.assertIn('fill="none" stroke="#FF0000"', svg)
+
     def test_a_drawing_reaches_the_lake_as_a_figure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

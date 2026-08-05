@@ -35,12 +35,32 @@ def _round(value: float) -> float:
     return round(value, 2)
 
 
+# The preset dash vocabularies, spelled as SVG dash arrays. An unknown name
+# still draws dashed -- the file said "not solid", and that much is kept.
+_DASHES = {
+    "dash": "6 4",
+    "lgDash": "10 4",
+    "sysDash": "4 3",
+    "dot": "1.5 3",
+    "sysDot": "1.5 3",
+    "dashDot": "6 4 1.5 4",
+    "lgDashDot": "10 4 1.5 4",
+    "lgDashDotDot": "10 4 1.5 4 1.5 4",
+    "sysDashDot": "4 3 1.5 3",
+    "sysDashDotDot": "4 3 1.5 3 1.5 3",
+}
+
+
 def _stroke(part: dict) -> str:
     """The outline only. Fill is stated separately, never twice."""
     colour = part.get("_line") or "444444"
     width = part.get("_line_w")
     width_px = max(0.5, _px(width)) if width else 1
-    return f'stroke="#{colour}" stroke-width="{width_px}"'
+    dash_name = part.get("_dash")
+    dash = ""
+    if dash_name and dash_name != "solid":
+        dash = f' stroke-dasharray="{_DASHES.get(dash_name, "6 4")}"'
+    return f'stroke="#{colour}" stroke-width="{width_px}"{dash}'
 
 
 def _fill(part: dict) -> str:
@@ -164,6 +184,49 @@ def _text(part: dict, x: float, y: float, w: float, h: float) -> str:
     )
 
 
+def _cropped_image(
+    part: dict,
+    name: str,
+    index: int,
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+) -> tuple[str, str]:
+    """Draw the window of the source bitmap that the sheet displays."""
+    if part.get("_crop_applied"):
+        return "", ""
+    crop = part.get("_crop") or {}
+    try:
+        left, top, right, bottom = (
+            float(crop.get(side) or 0) for side in ("l", "t", "r", "b")
+        )
+    except (AttributeError, TypeError, ValueError):
+        return "", ""
+    visible_w = 1 - left - right
+    visible_h = 1 - top - bottom
+    if visible_w <= 0 or visible_h <= 0 or not any((left, top, right, bottom)):
+        return "", ""
+
+    clip_id = f"crop{index}"
+    definition = (
+        f'<clipPath id="{clip_id}" clipPathUnits="userSpaceOnUse">'
+        f'<rect x="{x}" y="{y}" width="{w}" height="{h}"/>'
+        "</clipPath>"
+    )
+    image_w = w / visible_w
+    image_h = h / visible_h
+    image_x = x - left * image_w
+    image_y = y - top * image_h
+    image = (
+        f'<image href="{escape(name)}" x="{_round(image_x)}" '
+        f'y="{_round(image_y)}" width="{_round(image_w)}" '
+        f'height="{_round(image_h)}" preserveAspectRatio="none"/>'
+    )
+    clipped = f'<g clip-path="url(#{clip_id})">{image}</g>'
+    return definition, clipped
+
+
 def figure_svg(parts: list[dict]) -> tuple[str, int, int]:
     """The figure as SVG, with how many parts were drawn and how many boxed.
 
@@ -189,7 +252,7 @@ def figure_svg(parts: list[dict]) -> tuple[str, int, int]:
         if part.get("_grad"):
             part["_gradient_id"] = f"g{index}"
             defs.append(_gradient_def(part, part["_gradient_id"]))
-    for part in placed:
+    for index, part in enumerate(placed):
         x = _px(part["_off"][0] - min_x)
         y = _px(part["_off"][1] - min_y)
         w = _px(part["_ext"][0])
@@ -197,10 +260,27 @@ def figure_svg(parts: list[dict]) -> tuple[str, int, int]:
         media = part.get("media")
         if media:
             name = media.rpartition("/")[2]
-            body.append(
-                f'<image href="{escape(name)}" x="{x}" y="{y}" '
-                f'width="{w}" height="{h}"/>'
+            rotation = part.get("_rot")
+            transform = (
+                f' transform="rotate({_round(rotation)} '
+                f'{_round(x + w / 2)} {_round(y + h / 2)})"'
+                if rotation
+                else ""
             )
+            crop_def, image = _cropped_image(part, name, index, x, y, w, h)
+            if crop_def:
+                defs.append(crop_def)
+                body.append(f"<g{transform}>{image}</g>" if transform else image)
+            else:
+                aspect = (
+                    ' preserveAspectRatio="none"'
+                    if part.get("_crop_applied")
+                    else ""
+                )
+                body.append(
+                    f'<image href="{escape(name)}" x="{x}" y="{y}" '
+                    f'width="{w}" height="{h}"{aspect}{transform}/>'
+                )
             drawn += 1
             continue
         path = _custom_path(part, x, y, w, h)

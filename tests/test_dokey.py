@@ -3772,6 +3772,184 @@ class SpreadsheetTests(unittest.TestCase):
                 archive.writestr("xl/media/image1.png", b"\x89PNG\r\n\x1a\nfake")
         return path
 
+    def test_display_transforms_and_dash_styles_are_recorded(self) -> None:
+        # The sheet displays a picture turned, mirrored and cropped, inside
+        # a dashed callout: all of that is stated in the drawing, so all of
+        # it is recorded -- showing the raw bytes untransformed would be
+        # showing something other than the document.
+        from xml.etree import ElementTree
+
+        from dokey import sheets
+
+        anchor = ElementTree.fromstring(
+            '<xdr:twoCellAnchor xmlns:xdr="http://schemas.openxmlformats.org/'
+            'drawingml/2006/spreadsheetDrawing" '
+            'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+            "<xdr:pic><xdr:blipFill><a:blip/>"
+            '<a:srcRect l="10000" r="25000"/></xdr:blipFill>'
+            "<xdr:spPr>"
+            '<a:xfrm rot="5400000" flipH="1">'
+            '<a:off x="1" y="2"/><a:ext cx="3" cy="4"/></a:xfrm>'
+            '<a:ln w="12700"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill>'
+            '<a:prstDash val="dash"/></a:ln>'
+            "</xdr:spPr></xdr:pic></xdr:twoCellAnchor>"
+        )
+        detail = sheets._drawn_geometry(anchor)
+        self.assertEqual(detail["_rot"], 90)
+        self.assertTrue(detail["_flip_h"])
+        self.assertNotIn("_flip_v", detail)
+        self.assertEqual(
+            detail["_crop"], {"l": 0.1, "t": 0.0, "r": 0.25, "b": 0.0}
+        )
+        self.assertEqual(detail["_dash"], "dash")
+
+    def test_a_dashed_part_draws_dashed(self) -> None:
+        from dokey import sheetdraw
+
+        dashed = sheetdraw._stroke({"_line": "FF0000", "_dash": "dash"})
+        self.assertIn('stroke-dasharray="6 4"', dashed)
+        self.assertNotIn("dasharray", sheetdraw._stroke({"_line": "FF0000"}))
+
+    def test_a_cropped_image_draws_only_the_window_the_sheet_displays(self) -> None:
+        from xml.etree import ElementTree
+
+        from dokey import sheetdraw
+
+        svg, drawn, boxed = sheetdraw.figure_svg(
+            [
+                {
+                    "_off": (0, 0),
+                    "_ext": (952500, 952500),
+                    "_crop": {"l": 0.25, "t": 0.1, "r": 0.25, "b": 0.2},
+                    "_rot": 90,
+                    "media": "artifacts/media/image1.png",
+                }
+            ]
+        )
+
+        root = ElementTree.fromstring(svg)
+        ns = {"svg": "http://www.w3.org/2000/svg"}
+        clip = root.find(".//svg:clipPath", ns)
+        image = root.find(".//svg:image", ns)
+        self.assertIsNotNone(clip)
+        self.assertEqual(clip.get("clipPathUnits"), "userSpaceOnUse")
+        self.assertAlmostEqual(float(image.get("x")), -50)
+        self.assertAlmostEqual(float(image.get("y")), -14.29)
+        self.assertAlmostEqual(float(image.get("width")), 200)
+        self.assertAlmostEqual(float(image.get("height")), 142.86)
+        self.assertEqual(image.get("preserveAspectRatio"), "none")
+        self.assertIn('clip-path="url(#crop0)"', svg)
+        self.assertIn('transform="rotate(90', svg)
+        self.assertEqual((drawn, boxed), (1, 0))
+
+    def test_each_cropped_image_has_its_own_clip_window(self) -> None:
+        from dokey import sheetdraw
+
+        parts = [
+            {
+                "_off": (offset, 0),
+                "_ext": (952500, 952500),
+                "_crop": {"l": 0.1, "t": 0, "r": 0.1, "b": 0},
+                "media": f"artifacts/media/image{index}.png",
+            }
+            for index, offset in enumerate((0, 952500), start=1)
+        ]
+        svg, _, _ = sheetdraw.figure_svg(parts)
+
+        self.assertIn('id="crop0"', svg)
+        self.assertIn('clip-path="url(#crop0)"', svg)
+        self.assertIn('id="crop1"', svg)
+        self.assertIn('clip-path="url(#crop1)"', svg)
+
+    def test_bitmap_crop_returns_the_pixels_inside_the_sheet_window(self) -> None:
+        from PIL import Image
+
+        from dokey import sheetmedia
+
+        source = Image.new("RGB", (10, 10))
+        for y in range(10):
+            for x in range(10):
+                source.putpixel((x, y), (x, y, 0))
+        payload = io.BytesIO()
+        source.save(payload, format="PNG")
+
+        cropped = sheetmedia.crop_image(
+            payload.getvalue(), {"l": 0.2, "t": 0.1, "r": 0.3, "b": 0.4}
+        )
+
+        self.assertIsNotNone(cropped)
+        with Image.open(io.BytesIO(cropped)) as visible:
+            self.assertEqual(visible.size, (5, 5))
+            self.assertEqual(visible.getpixel((0, 0)), (2, 1, 0))
+            self.assertEqual(visible.getpixel((4, 4)), (6, 5, 0))
+        self.assertIsNone(sheetmedia.crop_image(payload.getvalue(), None))
+        self.assertIsNone(
+            sheetmedia.crop_image(payload.getvalue(), {"l": 0.6, "r": 0.5})
+        )
+
+    def test_different_crops_of_one_embedded_image_become_separate_files(
+        self,
+    ) -> None:
+        from PIL import Image
+
+        from dokey import sheets
+
+        source = Image.new("RGB", (10, 10), "white")
+        payload = io.BytesIO()
+        source.save(payload, format="PNG")
+
+        def anchor(ident: int, col: int, crop: str) -> str:
+            return (
+                "<xdr:twoCellAnchor>"
+                f"<xdr:from><xdr:col>{col}</xdr:col><xdr:row>0</xdr:row></xdr:from>"
+                f"<xdr:to><xdr:col>{col + 1}</xdr:col><xdr:row>1</xdr:row></xdr:to>"
+                "<xdr:pic><xdr:nvPicPr>"
+                f'<xdr:cNvPr id="{ident}" name="Picture {ident}"/>'
+                "<xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill>"
+                '<a:blip r:embed="rId1"/>'
+                f"<a:srcRect {crop}/><a:stretch><a:fillRect/></a:stretch>"
+                "</xdr:blipFill><xdr:spPr><a:xfrm>"
+                f'<a:off x="{col * 1000000}" y="0"/>'
+                '<a:ext cx="1000000" cy="1000000"/></a:xfrm>'
+                '<a:prstGeom prst="rect"/></xdr:spPr></xdr:pic>'
+                "<xdr:clientData/></xdr:twoCellAnchor>"
+            )
+
+        drawing = (
+            '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/'
+            '2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/'
+            'drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/'
+            'officeDocument/2006/relationships">'
+            + anchor(1, 0, 'l="20000" t="10000" r="30000" b="40000"')
+            + anchor(2, 2, 'l="10000" t="20000" r="10000" b="20000"')
+            + "</xdr:wsDr>"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            book = self._drawing_xlsx(
+                Path(tmp) / "pictures.xlsx", drawing, media=payload.getvalue()
+            )
+            read = sheets.read_xlsx(book)
+
+        images = [row for row in read.objects if row["kind"] == "image"]
+        self.assertEqual(
+            [row["media"] for row in images],
+            ["artifacts/media/image1.png", "artifacts/media/image1_2.png"],
+        )
+        self.assertTrue(all(row["_crop_applied"] for row in images))
+        sizes = []
+        for name in ("image1.png", "image1_2.png"):
+            with Image.open(io.BytesIO(read.media[name])) as visible:
+                sizes.append(visible.size)
+        self.assertEqual(sizes, [(5, 5), (8, 6)])
+        drawings = [
+            data.decode("utf-8")
+            for name, data in read.media.items()
+            if name.endswith(".svg")
+        ]
+        self.assertTrue(drawings)
+        self.assertTrue(all("<clipPath" not in svg for svg in drawings))
+        self.assertTrue(all('preserveAspectRatio="none"' in svg for svg in drawings))
+
     def test_a_native_workbook_is_read_from_its_own_statements(self) -> None:
         from dokey import sheets
 

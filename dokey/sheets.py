@@ -46,7 +46,7 @@ from pathlib import Path
 from typing import BinaryIO
 from xml.etree import ElementTree
 
-from . import sheetdraw
+from . import sheetdraw, sheetmedia
 from .mdunit import Section
 
 SPREADSHEET_SUFFIXES = frozenset({".xlsx", ".xlsm", ".xlsb", ".xls", ".ods"})
@@ -1367,6 +1367,33 @@ def _drawn_geometry(anchor_el) -> dict:
                 detail["_ext"] = (int(ext.get("cx") or 0), int(ext.get("cy") or 0))
             except ValueError:
                 pass
+        # The transform the sheet displays the part with. A photo pasted
+        # sideways stands upright only because the file says to turn it;
+        # dropping the turn would show the bytes, not the document.
+        try:
+            rotation = int(xfrm.get("rot") or 0) / 60000
+        except ValueError:
+            rotation = 0
+        if rotation:
+            detail["_rot"] = int(rotation) if rotation == int(rotation) else round(rotation, 2)
+        if (xfrm.get("flipH") or "").lower() in ("1", "true"):
+            detail["_flip_h"] = True
+        if (xfrm.get("flipV") or "").lower() in ("1", "true"):
+            detail["_flip_v"] = True
+    crop = anchor_el.find(f".//{_DML}srcRect")
+    if crop is not None:
+        # The visible window into a picture, as fractions of its bitmap.
+        # What the sheet shows is often a cut of what the file carries --
+        # a pasted screen capture with the surrounding toolbar cropped away.
+        try:
+            edges = {
+                side: int(crop.get(side) or 0) / 100000
+                for side in ("l", "t", "r", "b")
+            }
+        except ValueError:
+            edges = {}
+        if any(edges.values()):
+            detail["_crop"] = edges
     # The fill is the shape's own, a direct child of its properties. Searching
     # the subtree for one finds the outline's colour instead -- a red-edged
     # annotation box comes back as a solid red block, painted over what it was
@@ -1403,6 +1430,11 @@ def _drawn_geometry(anchor_el) -> dict:
                 detail["_line_w"] = int(line.get("w") or 0) or None
             except ValueError:
                 pass
+            # A dashed outline is a stated style, and often a stated role:
+            # the dashed box over a drawing is a callout, not a border.
+            dash = line.find(f"{_DML}prstDash")
+            if dash is not None and dash.get("val"):
+                detail["_dash"] = dash.get("val")
     size = anchor_el.find(f".//{_DML}rPr")
     if size is not None and size.get("sz"):
         try:
@@ -1494,6 +1526,10 @@ def _drawing_objects(
                 data = archive.read(target)
             except KeyError:
                 continue
+            cropped = sheetmedia.crop_image(data, record.get("_crop"))
+            if cropped is not None:
+                data = cropped
+                record["_crop_applied"] = True
             name = _stash_media(media, target.rpartition("/")[2], data)
             record.update(kind="image", media=f"artifacts/media/{name}")
             objects.append(record)

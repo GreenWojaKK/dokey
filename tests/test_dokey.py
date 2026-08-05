@@ -3834,6 +3834,49 @@ class SpreadsheetTests(unittest.TestCase):
         self.assertEqual(by_kind["shape"]["anchor_ref"], "A13")
 
     @staticmethod
+    def _drawing_xlsx(
+        path: Path,
+        drawing: str,
+        first_cell: str = "도면",
+        media: bytes | None = None,
+    ) -> Path:
+        """A one-sheet workbook carrying the drawing given and nothing else."""
+        parts = {
+            "xl/workbook.xml": (
+                '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                '<sheets><sheet name="도면" sheetId="1" r:id="rId1"/></sheets></workbook>'
+            ),
+            "xl/_rels/workbook.xml.rels": (
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                '<Relationship Id="rId1" Type="w" Target="worksheets/sheet1.xml"/></Relationships>'
+            ),
+            "xl/worksheets/sheet1.xml": (
+                '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                f'<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>{first_cell}</t></is></c>'
+                '</row></sheetData><drawing r:id="rId1"/></worksheet>'
+            ),
+            "xl/worksheets/_rels/sheet1.xml.rels": (
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                '<Relationship Id="rId1" Type="d" Target="../drawings/drawing1.xml"/>'
+                "</Relationships>"
+            ),
+            "xl/drawings/drawing1.xml": drawing,
+        }
+        if media is not None:
+            parts["xl/drawings/_rels/drawing1.xml.rels"] = (
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/'
+                '2006/relationships"><Relationship Id="rId1" Type="image" '
+                'Target="../media/image1.png"/></Relationships>'
+            )
+            parts["xl/media/image1.png"] = media
+        with zipfile.ZipFile(path, "w") as archive:
+            for name, content in parts.items():
+                archive.writestr(name, content)
+        return path
+
+    @staticmethod
     def _drawn_xlsx(path: Path) -> Path:
         """A sheet drawn the way people draw them: loose parts, no group.
 
@@ -3873,34 +3916,7 @@ class SpreadsheetTests(unittest.TestCase):
             + anchor(shape("rect", "Elsewhere"), 1, 40, 3, 42)
             + "</xdr:wsDr>"
         )
-        parts = {
-            "xl/workbook.xml": (
-                '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
-                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-                '<sheets><sheet name="도면" sheetId="1" r:id="rId1"/></sheets></workbook>'
-            ),
-            "xl/_rels/workbook.xml.rels": (
-                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-                '<Relationship Id="rId1" Type="w" Target="worksheets/sheet1.xml"/></Relationships>'
-            ),
-            "xl/worksheets/sheet1.xml": (
-                '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
-                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-                '<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>점검</t></is></c>'
-                "</row></sheetData>"
-                '<drawing r:id="rId1"/></worksheet>'
-            ),
-            "xl/worksheets/_rels/sheet1.xml.rels": (
-                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-                '<Relationship Id="rId1" Type="d" Target="../drawings/drawing1.xml"/>'
-                "</Relationships>"
-            ),
-            "xl/drawings/drawing1.xml": drawing,
-        }
-        with zipfile.ZipFile(path, "w") as archive:
-            for name, content in parts.items():
-                archive.writestr(name, content)
-        return path
+        return SpreadsheetTests._drawing_xlsx(path, drawing, "점검")
 
     def test_the_parts_of_one_drawing_are_read_as_one_figure(self) -> None:
         """A reader sees a tank with its label, not three unrelated shapes.
@@ -3936,8 +3952,10 @@ class SpreadsheetTests(unittest.TestCase):
         by_ref = {row["anchor_ref"]: row for row in read.objects}
         self.assertEqual(by_ref["O8"]["shape"], "flowChartMagneticDisk")
         self.assertNotIn("text", by_ref["O8"])
-        self.assertEqual(by_ref["O8"]["figure"], "O8:U15")
-        self.assertEqual(by_ref["B41"]["figure"], "B41:D43")
+        self.assertEqual(by_ref["O8"]["figure_id"], "O8:U15")
+        self.assertEqual(by_ref["B41"]["figure_id"], "B41:D43")
+        # A figure that was never cut is named for its cells, as before.
+        self.assertEqual(figures["O8:U15"]["figure_id"], "O8:U15")
 
     @staticmethod
     def _drawn_xlsx_with_geometry(path: Path) -> Path:
@@ -3982,33 +4000,7 @@ class SpreadsheetTests(unittest.TestCase):
             "</a:ln></xdr:spPr></xdr:sp></xdr:twoCellAnchor>"
             "</xdr:wsDr>"
         )
-        parts = {
-            "xl/workbook.xml": (
-                '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
-                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-                '<sheets><sheet name="도면" sheetId="1" r:id="rId1"/></sheets></workbook>'
-            ),
-            "xl/_rels/workbook.xml.rels": (
-                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-                '<Relationship Id="rId1" Type="w" Target="worksheets/sheet1.xml"/></Relationships>'
-            ),
-            "xl/worksheets/sheet1.xml": (
-                '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
-                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-                '<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>탱크</t></is></c>'
-                "</row></sheetData><drawing r:id=\"rId1\"/></worksheet>"
-            ),
-            "xl/worksheets/_rels/sheet1.xml.rels": (
-                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-                '<Relationship Id="rId1" Type="d" Target="../drawings/drawing1.xml"/>'
-                "</Relationships>"
-            ),
-            "xl/drawings/drawing1.xml": drawing,
-        }
-        with zipfile.ZipFile(path, "w") as archive:
-            for name, content in parts.items():
-                archive.writestr(name, content)
-        return path
+        return SpreadsheetTests._drawing_xlsx(path, drawing, "탱크")
 
     def test_a_figure_is_drawn_back_from_the_geometry_the_file_states(self) -> None:
         """A drawing kept only as parts cannot be looked at, by anyone.
@@ -4082,33 +4074,7 @@ class SpreadsheetTests(unittest.TestCase):
             + panel(1600000, "right", 2, 12)
             + "</xdr:wsDr>"
         )
-        parts = {
-            "xl/workbook.xml": (
-                '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
-                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-                '<sheets><sheet name="도면" sheetId="1" r:id="rId1"/></sheets></workbook>'
-            ),
-            "xl/_rels/workbook.xml.rels": (
-                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-                '<Relationship Id="rId1" Type="w" Target="worksheets/sheet1.xml"/></Relationships>'
-            ),
-            "xl/worksheets/sheet1.xml": (
-                '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
-                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-                '<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>비교</t></is></c>'
-                '</row></sheetData><drawing r:id="rId1"/></worksheet>'
-            ),
-            "xl/worksheets/_rels/sheet1.xml.rels": (
-                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-                '<Relationship Id="rId1" Type="d" Target="../drawings/drawing1.xml"/>'
-                "</Relationships>"
-            ),
-            "xl/drawings/drawing1.xml": drawing,
-        }
-        with zipfile.ZipFile(path, "w") as archive:
-            for name, content in parts.items():
-                archive.writestr(name, content)
-        return path
+        return SpreadsheetTests._drawing_xlsx(path, drawing, "비교")
 
     def test_two_drawings_side_by_side_stay_two_and_stay_related(self) -> None:
         """Touching gathers the pieces of a drawing and overreaches past it.
@@ -4131,8 +4097,76 @@ class SpreadsheetTests(unittest.TestCase):
         # The relation the merge was reaching for, kept without the merge.
         self.assertEqual(left["series"], right["series"])
         self.assertEqual(left["series_size"], 2)
+        self.assertEqual([left["panel"], right["panel"]], [1, 2])
+        # Both panels are anchored to the same block of cells, so the cells
+        # cannot name them apart; the cut position does.
+        self.assertEqual(left["ref"], right["ref"])
+        self.assertEqual([left["figure_id"], right["figure_id"]], ["B3:J13#1", "B3:J13#2"])
         # Each panel is drawn on its own, so each can be looked at on its own.
         self.assertNotEqual(left["drawing"], right["drawing"])
+        # And each part points at the panel it was cut into, not at both.
+        by_panel: dict[str, list[str]] = {}
+        for part in read.objects:
+            by_panel.setdefault(part["figure_id"], []).append(part.get("text") or "")
+        self.assertEqual(
+            by_panel, {"B3:J13#1": ["", "left"], "B3:J13#2": ["", "right"]}
+        )
+
+    def test_panels_the_cells_cannot_tell_apart_stay_two_rows(self) -> None:
+        """Two alike panels over one anchor are still two figures.
+
+        The side-by-side pair above is distinguishable by its captions, which
+        made two rows look distinct while nothing in them identified anything.
+        Take the captions away and the failure is total: same cells, same
+        shapes, same words, and -- because a figure is drawn from its own
+        origin -- the same SVG bytes down to the last coordinate, so the two
+        rows collapse onto one drawing and onto each other.
+        """
+        from dokey import sheets
+
+        def panel(x: int) -> str:
+            """A box with a bar under it, unlabelled, anchored like its twin."""
+            body = ""
+            for dx, dy, cx, cy in ((0, 100000, 1000000, 800000),
+                                   (100000, 1000000, 800000, 200000)):
+                body += (
+                    "<xdr:twoCellAnchor>"
+                    "<xdr:from><xdr:col>1</xdr:col><xdr:row>2</xdr:row></xdr:from>"
+                    "<xdr:to><xdr:col>9</xdr:col><xdr:row>12</xdr:row></xdr:to>"
+                    f'<xdr:sp><xdr:spPr><a:xfrm><a:off x="{x + dx}" y="{dy}"/>'
+                    f'<a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
+                    '<a:prstGeom prst="rect"/></xdr:spPr></xdr:sp>'
+                    "</xdr:twoCellAnchor>"
+                )
+            return body
+
+        drawing = (
+            '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" '
+            'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            + panel(200000)
+            + panel(1600000)
+            + "</xdr:wsDr>"
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            book = self._drawing_xlsx(Path(tmp) / "쌍둥이.xlsx", drawing, "비교")
+            read = sheets.read_xlsx(book)
+
+        self.assertEqual(len(read.figures), 2)
+        first, second = read.figures
+        self.assertEqual(first["ref"], second["ref"])
+        self.assertNotEqual(first["figure_id"], second["figure_id"])
+        # Distinguishable as rows, and each looked at on its own.
+        self.assertNotEqual(first, second)
+        self.assertNotEqual(first["drawing"], second["drawing"])
+        self.assertEqual(
+            sorted(part["figure_id"] for part in read.objects),
+            [first["figure_id"], first["figure_id"], second["figure_id"], second["figure_id"]],
+        )
+        # A name that has to sit in a path carries no fragment marker.
+        for figure in read.figures:
+            self.assertNotIn("#", figure["drawing"])
 
     def test_a_drawing_reaches_the_lake_as_a_figure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

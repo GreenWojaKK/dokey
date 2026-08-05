@@ -1192,6 +1192,28 @@ def split_panels(parts: list[dict]) -> list[list[dict]]:
     return [panel for panel in panels if panel]
 
 
+def _figure_id(ref: str, position: int, panels: int, taken: set[str]) -> str:
+    """A name for the figure that its parts can point back at.
+
+    ``ref`` says which cells the figure covers, which is what a reader wants
+    and what joins a figure to the region it sits in -- but it cannot identify
+    one, because the cut runs in pixels and the reference is written in cells.
+    Two panels of one drawing are routinely anchored to the same block of
+    cells, and then both rows read ``B3:J13``, every part points at both at
+    once, and two panels drawn alike are not distinguishable at all.
+
+    So the cut is named where it happened: a figure that shares its cells with
+    the panel beside it takes the position it was cut into. One that was never
+    cut keeps the bare reference, so the ordinary row reads as it always did.
+    """
+    name = ref if panels == 1 else f"{ref}#{position}"
+    while name in taken:
+        position += 1
+        name = f"{ref}#{position}"
+    taken.add(name)
+    return name
+
+
 def _touching(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> bool:
     return (
         a[0] - FIGURE_GAP <= b[2]
@@ -1250,11 +1272,12 @@ def group_parts(parts: list[dict]) -> list[dict]:
         return start if start == end else f"{start}:{end}"
 
     figures: list[dict] = []
+    taken: set[str] = set()
     clusters = [[parts[index] for index in members] for members in grouped.values()]
     for cluster in clusters:
         series_ref = _extent(cluster)
         panels = split_panels(cluster)
-        for rows in panels:
+        for position, rows in enumerate(panels, start=1):
             row0 = min(part["_span"][0] for part in rows)
             col0 = min(part["_span"][1] for part in rows)
             ref = _extent(rows)
@@ -1266,6 +1289,9 @@ def group_parts(parts: list[dict]) -> list[dict]:
                 "sheet": rows[0]["sheet"],
                 "sheet_name": rows[0]["sheet_name"],
                 "kind": "figure",
+                # What the row is called; ``ref`` is where it sits. They differ
+                # only where the cells cannot tell two panels apart.
+                "figure_id": _figure_id(ref, position, len(panels), taken),
                 "ref": ref,
                 "anchor_ref": cell_ref(row0, col0),
                 "anchor_row": row0,
@@ -1283,10 +1309,11 @@ def group_parts(parts: list[dict]) -> list[dict]:
                 # together on the sheet and are read against each other.
                 figure["series"] = series_ref
                 figure["series_size"] = len(panels)
+                figure["panel"] = position
             figures.append(figure)
             figure["_parts"] = rows
             for part in rows:
-                part["figure"] = figure["ref"]
+                part["figure_id"] = figure["figure_id"]
     figures.sort(key=lambda item: (item["anchor_row"], item["anchor_col"]))
     return figures
 
@@ -1304,7 +1331,12 @@ def draw_figures(figures: list[dict], media: dict[str, bytes]) -> None:
         svg, drawn, boxed = sheetdraw.figure_svg(parts)
         if not svg:
             continue
-        safe = figure["ref"].replace(":", "-")
+        # Named for the figure, not for its cells: two panels over one anchor
+        # would otherwise be offered the same filename and the second would be
+        # renamed anyway, leaving a name that says nothing about whose it is.
+        # ``#`` opens a fragment wherever a path is read as a URL, so the cut
+        # position is spelled out instead.
+        safe = figure["figure_id"].replace(":", "-").replace("#", "-p")
         name = _stash_media(
             media, f"figure_s{figure['sheet']}_{safe}.svg", svg.encode("utf-8")
         )

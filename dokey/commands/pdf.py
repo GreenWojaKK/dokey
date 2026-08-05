@@ -22,7 +22,7 @@ from ..outline import read_outline_toc
 from ..pdf import open_reader
 from ..toc import read_toc
 from ..tocpage import read_page_toc
-from .common import _default_lake_dir, _outline_max_level, _section_depth
+from .common import _lake_dir, _outline_max_level, _section_depth
 from .lake import _ingest_markdown, ingest_entries
 
 
@@ -95,7 +95,7 @@ def run_auto(args: argparse.Namespace) -> None:
     input_pdf = args.input
     if not input_pdf.is_file():
         raise SystemExit(f"Input PDF not found: {input_pdf}")
-    output_dir = args.output_dir or _default_lake_dir(input_pdf)
+    output_dir = _lake_dir(args, input_pdf)
 
     reader = open_reader(input_pdf)
     print(f"{input_pdf.name}: {len(reader.pages)} PDF pages")
@@ -145,7 +145,7 @@ def run_auto(args: argparse.Namespace) -> None:
                     f"Page images, no text layer: converting with "
                     f"{converter.display()} ({source}) instead."
                 )
-                return _convert_then_ingest(args, input_pdf, output_dir, converter)
+                return _convert_then_ingest(args, input_pdf, converter)
         elif probe.method == "ocr":
             print(
                 "Note: little extractable text per page. If this document is a "
@@ -376,7 +376,7 @@ def _printed_toc_if_better(
 
 
 def _convert_then_ingest(
-    args: argparse.Namespace, input_path: Path, output_dir: Path, converter
+    args: argparse.Namespace, input_path: Path, converter
 ) -> None:
     """The scanned-PDF path: convert out of process, ingest the Markdown.
 
@@ -384,7 +384,11 @@ def _convert_then_ingest(
     case where there is nothing else to read. The language comes from the OCR
     backend's saved setting if there is one, so a Korean scan does not get the
     converter's default engine by accident.
+
+    The lake is named here rather than by the caller, because until the route
+    was settled there was no converter to name it after.
     """
+    output_dir = _lake_dir(args, input_path, convertlib.converter_slug(converter))
     options = convertlib.load_options()
     caution = convertlib.ocr_engine_caution(True, options.ocr_engine)
     if caution:

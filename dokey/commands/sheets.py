@@ -9,7 +9,7 @@ from .. import blocks as blockslib
 from .. import convert as convertlib
 from .. import converters as converterslib
 from .. import sheets as sheetslib
-from .common import _default_lake_dir
+from .common import _lake_dir
 from .lake import _ingest_markdown, _write_sections_lake
 
 
@@ -30,7 +30,9 @@ def run_sheet_ingest(args: argparse.Namespace) -> None:
     input_path = args.input
     if not input_path.is_file():
         raise SystemExit(f"Spreadsheet not found: {input_path}")
-    output_dir = getattr(args, "output_dir", None) or _default_lake_dir(input_path)
+    # The direct read involves no converter, so the lake is the workbook's own
+    # name; the converter routes below name themselves after their tool.
+    output_dir = _lake_dir(args, input_path)
     explicit_blocks = getattr(args, "blocks", None)
     # Naming a converter is an instruction, and an instruction outranks the
     # native reader -- silently reading directly after being told otherwise
@@ -70,7 +72,9 @@ def run_sheet_ingest(args: argparse.Namespace) -> None:
             _ingest_markdown(
                 render.read_text(encoding="utf-8"),
                 input_path=input_path,
-                output_dir=output_dir,
+                output_dir=_lake_dir(
+                    args, input_path, convertlib.converter_slug(choice.converter)
+                ),
                 fallback_title=input_path.stem,
                 source_label="spreadsheet",
                 profile=getattr(args, "profile", "auto"),
@@ -126,6 +130,7 @@ def run_sheet_ingest(args: argparse.Namespace) -> None:
         if blocks is None:
             raise SystemExit("The converter produced no block stream to read.")
         print(f"Converted in {time.time() - started:.1f}s: {blocks.name}")
+        output_dir = _lake_dir(args, input_path, convertlib.converter_slug(converter))
 
     names = sheetslib.sheet_names(input_path)
     sections, report = sheetslib.unitize(blocks, names)

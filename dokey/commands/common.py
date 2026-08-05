@@ -8,11 +8,29 @@ from .. import mdunit
 from .. import search as searchlib
 
 
-def _default_lake_dir(input_pdf: Path) -> Path:
+def _default_lake_dir(input_pdf: Path, converter: str | None = None) -> Path:
+    """Where a lake lands when the caller named no directory.
+
+    A document that reached the lake through a converter takes that
+    converter's name into the path. Two converters are not two runs of one
+    thing: they read the document differently, keep different evidence, and
+    yield different sections -- which is the whole reason to run both. Landing
+    them on one directory means the second replaces the first, and the
+    comparison is destroyed by the act of making it. Where dokey read the
+    document itself there is nothing to tell apart, and the path stays the
+    document's name alone.
+    """
     # Keep the (often non-ASCII) document name readable in the lake path;
     # strip only the characters the filesystem rejects.
     stem = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', " ", input_pdf.stem).strip() or "document"
-    return Path("dokey_out") / stem
+    return Path("dokey_out") / (f"{stem}-{converter}" if converter else stem)
+
+
+def _lake_dir(args, input_path: Path, converter: str | None = None) -> Path:
+    """The directory the caller named, or the default for this source."""
+    return getattr(args, "output_dir", None) or _default_lake_dir(
+        input_path, converter
+    )
 
 
 def _section_depth_arg(value: str):

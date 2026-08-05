@@ -2042,7 +2042,9 @@ class ConverterSeamTests(unittest.TestCase):
                 work_dir=work,
                 runner=runner,
             )
-            self.assertEqual([path.name for path in produced], ["book.md"])
+            # The source's name, and the tool that read it: two converters
+            # over one document have to be able to sit side by side.
+            self.assertEqual([path.name for path in produced], ["book-docling.md"])
 
     def test_a_failing_converter_reports_its_own_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2109,7 +2111,7 @@ class ConverterSeamTests(unittest.TestCase):
                 runner=runner,
             )
             self.assertEqual(
-                produced[0].name, "20240315_부서명_T-101_사건_rev1.2.md"
+                produced[0].name, "20240315_부서명_T-101_사건_rev1.2-docling.md"
             )
             self.assertEqual(produced[0].read_text(encoding="utf-8"), "# ok\n")
 
@@ -2232,8 +2234,8 @@ class ConverterSeamTests(unittest.TestCase):
                 main(["convert", str(source), "--output", str(out)])
                 # Conversion is the product: both formats, and no lake unless
                 # one was asked for.
-                self.assertTrue((out / "book.md").exists())
-                self.assertTrue((out / "book.json").exists())
+                self.assertTrue((out / "book-docling.md").exists())
+                self.assertTrue((out / "book-docling.json").exists())
                 self.assertFalse(lake.exists())
 
                 main(
@@ -2244,6 +2246,68 @@ class ConverterSeamTests(unittest.TestCase):
                 )
                 self.assertTrue((lake / "silver" / "sections.jsonl").exists())
             finally:
+                if previous is None:
+                    os.environ.pop("DOKEY_CONFIG_DIR", None)
+                else:
+                    os.environ["DOKEY_CONFIG_DIR"] = previous
+
+    def test_two_converters_over_one_document_do_not_overwrite_each_other(
+        self,
+    ) -> None:
+        """A second converter is a second reading, not a re-run of the first.
+
+        Two converters keep different evidence and yield different sections,
+        which is the whole reason to run both -- so landing them on one name
+        destroys the comparison by the act of making it. Both the render and
+        the lake carry the tool that produced them.
+        """
+        from dokey.commands.common import _default_lake_dir
+
+        self.assertEqual(_default_lake_dir(Path("report.pdf")), Path("dokey_out/report"))
+        self.assertEqual(
+            _default_lake_dir(Path("report.pdf"), "docling"),
+            Path("dokey_out/report-docling"),
+        )
+        self.assertEqual(
+            _default_lake_dir(Path("report.pdf"), "markitdown"),
+            Path("dokey_out/report-markitdown"),
+        )
+        # A tool dokey knows is called by its kind; one it does not is called
+        # after the program it runs, so two unknown tools are still two.
+        self.assertEqual(
+            convertlib.converter_slug(convertlib.Converter(("docling",))), "docling"
+        )
+        self.assertEqual(
+            convertlib.converter_slug(
+                convertlib.Converter((r"C:\tools\My Reader.exe",), "custom")
+            ),
+            "my-reader",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            previous = os.environ.get("DOKEY_CONFIG_DIR")
+            os.environ["DOKEY_CONFIG_DIR"] = str(tmp_path / "config")
+            previous_cwd = os.getcwd()
+            try:
+                script = self._stub_converter(tmp_path)
+                convertlib.save_converter(
+                    convertlib.Converter((sys.executable, str(script)))
+                )
+                source = tmp_path / "book.pdf"
+                source.write_bytes(b"%PDF-1.4\n")
+                os.chdir(tmp_path)
+
+                main(["convert", str(source), "--output", str(tmp_path), "--ingest"])
+
+                # No --output-dir was given, so the default names itself.
+                lake = tmp_path / "dokey_out" / "book-docling"
+                self.assertTrue((lake / "silver" / "sections.jsonl").exists())
+                self.assertFalse((tmp_path / "dokey_out" / "book").exists())
+                # And the block stream is still found beside its own render.
+                self.assertTrue((tmp_path / "book-docling.json").exists())
+            finally:
+                os.chdir(previous_cwd)
                 if previous is None:
                     os.environ.pop("DOKEY_CONFIG_DIR", None)
                 else:

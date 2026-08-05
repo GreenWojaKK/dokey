@@ -352,8 +352,21 @@ def _ascii_staged(input_path: Path) -> Path:
     return staged
 
 
+def converter_slug(converter: Converter) -> str:
+    """A short, filename-safe name for the tool that produced something.
+
+    ``kind`` is what the tool is, and dokey knows two of them by name. A
+    command it does not recognize is called after the program it runs, so two
+    unrecognized converters are not both filed as ``custom``.
+    """
+    if converter.kind != "custom":
+        return converter.kind
+    name = re.sub(r"[^a-z0-9]+", "-", Path(converter.argv[0]).stem.lower())
+    return name.strip("-") or "custom"
+
+
 def _restore_name(produced: Path, stem: str) -> Path:
-    """Give a converted file the name of the document it came from.
+    """Give a converted file the name of the document it came from, and its tool.
 
     The stand-in the converter is handed carries an ASCII name, and the
     converter names its output after it -- so a document called
@@ -362,6 +375,11 @@ def _restore_name(produced: Path, stem: str) -> Path:
     department, the equipment and the event replaced by underscores. In this
     corpus the filename is where a document's metadata lives, so the
     workaround must not be allowed to cost it.
+
+    The converter's name is part of what the file is: two converters read one
+    document differently, and a render is only comparable to another if both
+    survive. Same document, same converter, same name -- so re-running a
+    conversion still replaces its own output rather than piling up copies.
     """
     if produced.stem == stem:
         return produced
@@ -432,6 +450,7 @@ def convert(
         ) from exc
 
     stem = source.stem
+    label = converter_slug(converter)
     produced: list[Path] = []
     for target in targets:
         # A directory input yields several files; a single input yields one,
@@ -440,7 +459,7 @@ def convert(
         named = [path for path in candidates if path.stem == stem]
         chosen = named or candidates
         if chosen:
-            produced.append(_restore_name(chosen[0], input_path.stem))
+            produced.append(_restore_name(chosen[0], f"{input_path.stem}-{label}"))
     if getattr(proc, "returncode", 1) != 0 or not produced:
         detail = (getattr(proc, "stderr", "") or getattr(proc, "stdout", "") or "").strip()
         raise ConversionFailed(

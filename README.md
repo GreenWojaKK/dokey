@@ -211,7 +211,9 @@ The recognition is deliberately lexical — no LLM:
 `--page-offset N` overrides the prior (the smoke test still verifies it),
 `--section-overlap N` overrides the detected overlap, and `--toc-page N`
 pins the contents page. The lake lands in `dokey_out\<pdf name>` unless
-`--output-dir` says otherwise. Everything below remains available for
+`--output-dir` says otherwise — plus the converter's name where one was used,
+so two readings of one document do not overwrite each other (see
+[the converter registry](#flow-documents-and-a-converter-registry-typed-by-evidence)). Everything below remains available for
 manual control.
 
 ## Basic Usage
@@ -416,7 +418,7 @@ or an OCR server:
 ```powershell
 pip install dokey[docling]     # or: pip install docling — either is found
 dokey convert                  # show the resolved converter
-dokey convert "scan.pdf"       # convert; writes scan.md + scan.json here
+dokey convert "scan.pdf"       # convert; writes scan-docling.md + .json here
 dokey convert "scan.pdf" --ingest   # …and unitize it into a lake
 dokey auto "scan.pdf"          # ingest, converting on the way if it has to
 ```
@@ -519,6 +521,25 @@ Each ingest records which converter produced the render (`converted_by` in
 scanned PDF still requires a converter that reconstructs pages: a
 markdown-only tool would read the empty text layer and return silence.
 
+**A second converter is a second reading, not a re-run of the first**, so it
+does not land on the first one's name. A render is written as
+`report-docling.md` (with `report-docling.json` beside it, where dokey already
+looks for it), and the lake it unitizes into is `dokey_out\report-docling`.
+Running the two tools over one document therefore leaves both results standing,
+which is the only way the difference between them can be looked at:
+
+```powershell
+dokey auto "report.docx" --converter docling      # dokey_out\report-docling
+dokey auto "report.docx" --converter markitdown   # dokey_out\report-markitdown
+```
+
+Re-running the *same* converter still replaces its own output — one document
+read one way is one result, not a pile of them. Where no converter was
+involved — a text-layer PDF, Markdown, a workbook dokey reads itself — there is
+nothing to tell apart and the path stays the document's name alone
+(`dokey_out\report`). `--output-dir` overrides all of this, and the app always
+passes one, since it asks for a library name up front.
+
 ## Spreadsheets: read from the file, in the order its evidence is stated
 
 ```powershell
@@ -603,8 +624,16 @@ once, on the axis the drawing repeats along; what remains inside a panel — a
 caption below its drawing, an arrow into it — is that panel's content, since
 cutting on the other axis too would take every drawing away from the words
 naming it. Being cut apart is not being unrelated: each panel records the
-`series` it came from and how many panels that series holds, which is the
-relation the merge was reaching for.
+`series` it came from, how many panels that series holds, and which one it is,
+which is the relation the merge was reaching for.
+
+The cut runs in pixels while a cell reference is written in cells, so two
+panels of one drawing are routinely anchored to the same block of cells: `ref`
+says where a figure sits and cannot, there, say which figure it is. So the row
+is named separately. `figure_id` is the reference, plus the position it was cut
+into where a cut happened (`B3:J13#2`), and that is what each part in
+`objects.jsonl` points back at and what each drawing is filed under. A figure
+that was never cut is named for its cells alone, as before.
 
 A figure that exists only as a list of parts still cannot be *looked* at, by
 a person or by a model, so each one is drawn back out to

@@ -9,7 +9,7 @@ from .. import blocks as blockslib
 from .. import convert as convertlib
 from .. import converters as converterslib
 from .. import hwp as hwplib
-from .common import _default_lake_dir, _section_depth
+from .common import _lake_dir, _section_depth
 from .lake import _ingest_markdown
 
 
@@ -34,7 +34,10 @@ def run_hwp_ingest(args: argparse.Namespace) -> None:
     input_path = args.input
     if not input_path.is_file():
         raise SystemExit(f"HWP file not found: {input_path}")
-    output_dir = getattr(args, "output_dir", None) or _default_lake_dir(input_path)
+    # No converter in the path here: the HWP seam resolves one tool by
+    # discovery and states no kind for itself, so there is never a second
+    # name to tell apart. Name the lake yourself with --output-dir.
+    output_dir = _lake_dir(args, input_path)
 
     converter, source = hwplib.resolve_converter()
     if converter is None:
@@ -67,7 +70,6 @@ def run_flow_ingest(args: argparse.Namespace) -> None:
     input_path = args.input
     if not input_path.is_file():
         raise SystemExit(f"Document not found: {input_path}")
-    output_dir = getattr(args, "output_dir", None) or _default_lake_dir(input_path)
 
     options = convertlib.load_options()
     started = time.time()
@@ -93,6 +95,11 @@ def run_flow_ingest(args: argparse.Namespace) -> None:
     print(
         f"Converted in {time.time() - started:.1f}s: "
         f"{', '.join(path.name for path in produced)}"
+    )
+    # Named only now: which converter opened the file is settled by running
+    # it, so before this point there was nothing to name the lake after.
+    output_dir = _lake_dir(
+        args, input_path, convertlib.converter_slug(choice.converter)
     )
     _ingest_markdown(
         render.read_text(encoding="utf-8"),
@@ -124,7 +131,9 @@ def run_md_ingest(args: argparse.Namespace) -> None:
     input_path = args.input
     if not input_path.is_file():
         raise SystemExit(f"Markdown file not found: {input_path}")
-    output_dir = getattr(args, "output_dir", None) or _default_lake_dir(input_path)
+    # A render made by `dokey convert` already carries its converter in its
+    # own filename, so the lake named after it is separate without help.
+    output_dir = _lake_dir(args, input_path)
 
     markdown = input_path.read_text(encoding="utf-8")
     print(f"{input_path.name}: Markdown input ({len(markdown)} chars)")
@@ -285,7 +294,7 @@ def run_convert(args: argparse.Namespace) -> None:
             "Nothing to ingest: the lake is built from the Markdown render, so "
             "ask for --to md as well."
         )
-    output_dir = getattr(args, "output_dir", None) or _default_lake_dir(input_path)
+    output_dir = _lake_dir(args, input_path, convertlib.converter_slug(converter))
     markdown = render.read_text(encoding="utf-8")
     print(f"{render.name}: Markdown from converter ({len(markdown)} chars)")
     _ingest_markdown(

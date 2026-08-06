@@ -2380,9 +2380,11 @@ class ConverterSeamTests(unittest.TestCase):
         self.assertEqual(
             convertlib.converter_slug(convertlib.Converter(("docling",))), "docling"
         )
+        # A forward-slash path parses on every platform; a backslash one is a
+        # single odd filename on POSIX, so the slug test must not use it.
         self.assertEqual(
             convertlib.converter_slug(
-                convertlib.Converter((r"C:\tools\My Reader.exe",), "custom")
+                convertlib.Converter(("/opt/tools/My Reader.exe",), "custom")
             ),
             "my-reader",
         )

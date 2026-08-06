@@ -12,7 +12,7 @@ The reading order follows what depends on what:
 
 1. **The coordinate space first.** Cells with their coordinates, types and
    merges. Everything else in a workbook is anchored to this space, so it is
-   read first and *kept*: ``bronze/cells.jsonl`` records every cell under its
+   read first and *kept*: ``cells.jsonl`` records every cell under its
    own address, which is what makes the rendered sections checkable the way
    ``items.jsonl`` makes prose checkable. Trimming and joining are rendering
    choices on top; they no longer destroy the addresses.
@@ -1340,7 +1340,7 @@ def draw_figures(figures: list[dict], media: dict[str, bytes]) -> None:
         name = _stash_media(
             media, f"figure_s{figure['sheet']}_{safe}.svg", svg.encode("utf-8")
         )
-        figure["drawing"] = f"artifacts/media/{name}"
+        figure["drawing"] = f"media/{name}"
         # An approximated part is one this drawing had no formula for; saying
         # so is what keeps the picture from being read as the original.
         figure["drawn_parts"] = drawn
@@ -1531,7 +1531,7 @@ def _drawing_objects(
                 data = cropped
                 record["_crop_applied"] = True
             name = _stash_media(media, target.rpartition("/")[2], data)
-            record.update(kind="image", media=f"artifacts/media/{name}")
+            record.update(kind="image", media=f"media/{name}")
             objects.append(record)
         else:
             # A shape with no words is not nothing: the tank outline, the
@@ -1588,9 +1588,9 @@ def _read_objects(
 
 def write_cells(output_dir: Path, records: list[dict]) -> Path:
     """The address layer: every cell under its own reference."""
-    bronze = Path(output_dir) / "bronze"
-    bronze.mkdir(parents=True, exist_ok=True)
-    path = bronze / "cells.jsonl"
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / "cells.jsonl"
     with path.open("w", encoding="utf-8") as handle:
         for record in records:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -1599,9 +1599,9 @@ def write_cells(output_dir: Path, records: list[dict]) -> Path:
 
 def write_objects(output_dir: Path, objects: list[dict]) -> Path:
     """What the workbook declares hangs on its grid, anchors included."""
-    silver = Path(output_dir) / "silver"
-    silver.mkdir(parents=True, exist_ok=True)
-    path = silver / "objects.jsonl"
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / "objects.jsonl"
     with path.open("w", encoding="utf-8") as handle:
         for record in objects:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -1610,9 +1610,9 @@ def write_objects(output_dir: Path, objects: list[dict]) -> Path:
 
 def write_figures(output_dir: Path, figures: list[dict]) -> Path:
     """The drawn parts as the drawings a reader sees, one row each."""
-    silver = Path(output_dir) / "silver"
-    silver.mkdir(parents=True, exist_ok=True)
-    path = silver / "sheet_figures.jsonl"
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / "sheet_figures.jsonl"
     with path.open("w", encoding="utf-8") as handle:
         for record in figures:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -1621,7 +1621,7 @@ def write_figures(output_dir: Path, figures: list[dict]) -> Path:
 
 def write_media(output_dir: Path, media: dict[str, bytes]) -> Path:
     """The opaque payloads, carried as bytes; reading them is a VLM's job."""
-    folder = Path(output_dir) / "artifacts" / "media"
+    folder = Path(output_dir) / "media"
     folder.mkdir(parents=True, exist_ok=True)
     for name, data in media.items():
         (folder / name).write_bytes(data)

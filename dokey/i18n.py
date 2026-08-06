@@ -152,7 +152,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "write_items": "Also address every item (4.1 (1) (가))",
         "write_items_help": (
-            "Writes silver/items.jsonl: each numbered item of each section with "
+            "Writes items.jsonl: each numbered item of each section with "
             "its full address and offsets. Useful for extraction; skip it to "
             "keep the library small."
         ),
@@ -247,7 +247,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "custom_library_path": "Custom library path",
         "custom_library_path_help": "Overrides the library selected above.",
         "not_library": (
-            "Not a library directory (no silver/sections.jsonl): {path}"
+            "Not a library directory (no sections.jsonl): {path}"
         ),
         "index_error": "Could not prepare the search index: {error}",
         "building_search_index": "Building search index...",
@@ -256,7 +256,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "index_stats": "{sections} sections / {pages} pages indexed",
         "index_built": "Index built {created}",
         "no_page_text": (
-            "No bronze/pages.jsonl in this library; only section titles are "
+            "No pages.jsonl in this library; only section titles are "
             "searchable. Re-ingest without --no-page-text."
         ),
         "max_results": "Max results",
@@ -419,7 +419,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "write_items": "항목까지 주소 매기기 (4.1 (1) (가))",
         "write_items_help": (
-            "silver/items.jsonl을 만듭니다 — 절 안의 번호 항목마다 전체 주소와 "
+            "items.jsonl을 만듭니다 — 절 안의 번호 항목마다 전체 주소와 "
             "위치를 기록합니다. 추출 작업에 쓰이며, 라이브러리를 가볍게 두려면 "
             "끄십시오."
         ),
@@ -512,7 +512,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "custom_library_path": "사용자 지정 라이브러리 경로",
         "custom_library_path_help": "위에서 선택한 라이브러리 대신 이 경로를 사용합니다.",
         "not_library": (
-            "라이브러리 폴더가 아닙니다(silver/sections.jsonl 없음): {path}"
+            "라이브러리 폴더가 아닙니다(sections.jsonl 없음): {path}"
         ),
         "index_error": "검색 색인을 준비하지 못했습니다: {error}",
         "building_search_index": "검색 색인을 만드는 중...",
@@ -521,7 +521,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "index_stats": "섹션 {sections}개 / 페이지 {pages}개 색인됨",
         "index_built": "색인 생성 시각: {created}",
         "no_page_text": (
-            "이 라이브러리에 bronze/pages.jsonl이 없어 섹션 제목만 검색할 수 있습니다. "
+            "이 라이브러리에 pages.jsonl이 없어 섹션 제목만 검색할 수 있습니다. "
             "--no-page-text 없이 다시 가져오세요."
         ),
         "max_results": "최대 검색 결과",

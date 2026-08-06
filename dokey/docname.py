@@ -138,9 +138,9 @@ def read(path: Path | str) -> DocumentName:
 
 def write_document_json(output_dir: Path, source: Path | str) -> Path:
     """Record what the source document's name says, beside the manifest."""
-    silver = Path(output_dir) / "silver"
-    silver.mkdir(parents=True, exist_ok=True)
-    path = silver / "document.json"
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / "document.json"
     path.write_text(
         json.dumps(read(source).as_dict(), ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",

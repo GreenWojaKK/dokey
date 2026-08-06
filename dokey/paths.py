@@ -250,7 +250,7 @@ def write_items_jsonl(rows: list[dict], output_dir: Path) -> Path:
     """Persist the addressed items beside the sections they came from."""
     import json
 
-    path = output_dir / "silver" / "items.jsonl"
+    path = output_dir / "items.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as output:
         for row in rows:

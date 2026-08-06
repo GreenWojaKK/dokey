@@ -15,11 +15,12 @@ from .common import resolve_lake
 
 
 def _find_raw_pdf(lake: Path) -> Path:
-    raw_dir = lake / "raw"
-    pdfs = sorted(raw_dir.glob("*.pdf")) if raw_dir.exists() else []
+    # The source copy sits at the lake root; the split PDFs live under
+    # by_section/, so a root glob finds only the document itself.
+    pdfs = sorted(lake.glob("*.pdf"))
     if not pdfs:
         raise SystemExit(
-            f"No PDF under {raw_dir}. Pass --pdf, or re-ingest without --no-raw-copy."
+            f"No source PDF in {lake}. Pass --pdf, or re-ingest without --no-raw-copy."
         )
     return pdfs[0]
 
@@ -185,7 +186,7 @@ def run_folios(args: argparse.Namespace) -> None:
     lake = resolve_lake(args.lake)
     pdf_path = args.pdf or _find_raw_pdf(lake)
 
-    rows = searchlib._read_jsonl(lake / "silver" / "sections.jsonl")
+    rows = searchlib._read_jsonl(lake / "sections.jsonl")
     if not rows:
         raise SystemExit("Empty section manifest; run `dokey ingest` first.")
 
@@ -217,10 +218,10 @@ def run_folios(args: argparse.Namespace) -> None:
     if used is None:
         _folios_via_ocr(lake, pdf_path, rows, args)
 
-    backup = lake / "silver" / "sections.prefolio.jsonl"
+    backup = lake / "sections.prefolio.jsonl"
     if not backup.exists():
         backup.write_text(
-            (lake / "silver" / "sections.jsonl").read_text(encoding="utf-8"),
+            (lake / "sections.jsonl").read_text(encoding="utf-8"),
             encoding="utf-8",
         )
         print(f"Backed up original manifest: {backup}")

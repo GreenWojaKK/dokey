@@ -184,6 +184,26 @@ def _text(part: dict, x: float, y: float, w: float, h: float) -> str:
     )
 
 
+def _display_transform(part: dict, x: float, y: float, w: float, h: float) -> str:
+    """The turn and mirrors that DrawingML applies around a part's centre."""
+    rotation = part.get("_rot") or 0
+    flip_h = bool(part.get("_flip_h"))
+    flip_v = bool(part.get("_flip_v"))
+    if not rotation and not flip_h and not flip_v:
+        return ""
+    centre_x = _round(x + w / 2)
+    centre_y = _round(y + h / 2)
+    if rotation and not flip_h and not flip_v:
+        return f"rotate({_round(rotation)} {centre_x} {centre_y})"
+    operations = [f"translate({centre_x} {centre_y})"]
+    if rotation:
+        operations.append(f"rotate({_round(rotation)})")
+    if flip_h or flip_v:
+        operations.append(f"scale({-1 if flip_h else 1} {-1 if flip_v else 1})")
+    operations.append(f"translate({_round(-centre_x)} {_round(-centre_y)})")
+    return " ".join(operations)
+
+
 def _cropped_image(
     part: dict,
     name: str,
@@ -260,12 +280,9 @@ def figure_svg(parts: list[dict]) -> tuple[str, int, int]:
         media = part.get("media")
         if media:
             name = media.rpartition("/")[2]
-            rotation = part.get("_rot")
+            display_transform = _display_transform(part, x, y, w, h)
             transform = (
-                f' transform="rotate({_round(rotation)} '
-                f'{_round(x + w / 2)} {_round(y + h / 2)})"'
-                if rotation
-                else ""
+                f' transform="{display_transform}"' if display_transform else ""
             )
             crop_def, image = _cropped_image(part, name, index, x, y, w, h)
             if crop_def:
@@ -285,13 +302,18 @@ def figure_svg(parts: list[dict]) -> tuple[str, int, int]:
             continue
         path = _custom_path(part, x, y, w, h)
         if path:
-            body.append(f'<path d="{path}" {_fill(part)} {_stroke(part)}/>')
+            shape = f'<path d="{path}" {_fill(part)} {_stroke(part)}/>'
             drawn += 1
         else:
             shape, exact = _preset(part, x, y, w, h)
-            body.append(shape)
             drawn += 1 if exact else 0
             boxed += 0 if exact else 1
+        display_transform = _display_transform(part, x, y, w, h)
+        body.append(
+            f'<g transform="{display_transform}">{shape}</g>'
+            if display_transform
+            else shape
+        )
         body.append(_text(part, x, y, w, h))
 
     canvas_w = round(width * scale, 2)

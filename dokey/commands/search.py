@@ -18,7 +18,7 @@ def run_index(args: argparse.Namespace) -> None:
     )
     if not stats.has_page_text:
         print(
-            "Note: no bronze/pages.jsonl, so only section titles are searchable. "
+            "Note: no pages.jsonl, so only section titles are searchable. "
             "Re-run ingest without --no-page-text for full-text search."
         )
 

@@ -75,9 +75,14 @@ def _outline_max_level(args: argparse.Namespace) -> int:
 
 def resolve_lake(lake: Path | None) -> Path:
     if lake is not None:
-        if not (lake / "silver" / "sections.jsonl").exists():
+        if not (lake / "sections.jsonl").exists():
+            if (lake / "silver" / "sections.jsonl").exists():
+                raise SystemExit(
+                    f"This lake is in the old layered layout: {lake}\n"
+                    f'Flatten it once with:  dokey migrate "{lake}"'
+                )
             raise SystemExit(
-                f"Not a lake directory (no silver/sections.jsonl): {lake}"
+                f"Not a lake directory (no sections.jsonl): {lake}"
             )
         return lake
     candidates = searchlib.find_lakes(Path.cwd())

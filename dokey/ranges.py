@@ -106,7 +106,7 @@ def build_ranges(
                 pdf_start_page=pdf_start_page,
                 pdf_end_page=pdf_end_page,
                 page_count=page_count,
-                output_file=str(output_dir / "artifacts" / "by_section" / parent_folder / filename),
+                output_file=str(output_dir / "by_section" / parent_folder / filename),
             )
         )
 

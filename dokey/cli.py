@@ -25,6 +25,7 @@ from .commands.documents import (
 )
 from .commands.folios import run_folios
 from .commands.lake import ingest_entries
+from .commands.migrate import run_migrate
 from .commands.parser import build_parser
 from .commands.pdf import ingest, open_reader, run_auto, run_probe
 from .commands.runtime import run_app, run_backend, run_streamlit, run_ui
@@ -81,6 +82,8 @@ def main(argv: list[str] | None = None) -> None:
         run_ui(args)
     elif args.command == "folios":
         run_folios(args)
+    elif args.command == "migrate":
+        run_migrate(args)
     elif args.command == "probe":
         run_probe(args)
     elif args.command == "backend":

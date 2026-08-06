@@ -80,7 +80,7 @@ def result_card(lake: Path, hit: searchlib.SectionHit) -> None:
 
 
 def browse_sections(lake: Path) -> None:
-    frame = pd.read_json(lake / "silver" / "sections.jsonl", lines=True)
+    frame = pd.read_json(lake / "sections.jsonl", lines=True)
     wanted = ["index", "parent", "title"]
     if "printed_start_page" in frame.columns:
         wanted += ["printed_start_page", "printed_end_page"]

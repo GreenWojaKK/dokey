@@ -286,9 +286,9 @@ def _locate(
 
 
 def write_figures(output_dir: Path, figures: list[Figure]) -> Path:
-    silver = Path(output_dir) / "silver"
-    silver.mkdir(parents=True, exist_ok=True)
-    path = silver / "figures.jsonl"
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / "figures.jsonl"
     with path.open("w", encoding="utf-8") as handle:
         for figure in figures:
             handle.write(json.dumps(figure.as_dict(), ensure_ascii=False) + "\n")

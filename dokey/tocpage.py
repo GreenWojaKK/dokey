@@ -473,7 +473,7 @@ def _read_toc_ocr(
 
     The rendered images and transcripts are transient scaffolding: nothing is
     written to the lake. Only the recovered TOC (as the returned entries, and in
-    turn the silver manifest) survives.
+    turn the manifest) survives.
     """
     fitz = _lazy_fitz()
     with fitz.open(str(pdf_path)) as doc:

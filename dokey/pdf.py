@@ -31,10 +31,18 @@ def open_reader(path: Path) -> PdfReader:
     return PdfReader(str(path))
 
 
-def copy_raw_pdf(input_path: Path, output_dir: Path) -> Path:
-    raw_dir = output_dir / "raw"
-    raw_dir.mkdir(parents=True, exist_ok=True)
-    target = raw_dir / input_path.name
+def copy_source_document(input_path: Path, output_dir: Path) -> Path:
+    """Keep the source document in the lake, under its own name.
+
+    The lake is flat, so the original sits at the root beside what was read
+    out of it -- opening the folder says at once which document it holds. A
+    re-ingest pointed at that very copy is left alone rather than copied
+    onto itself.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    target = output_dir / input_path.name
+    if target.exists() and target.resolve() == input_path.resolve():
+        return target
     shutil.copy2(input_path, target)
     return target
 
@@ -42,7 +50,7 @@ def copy_raw_pdf(input_path: Path, output_dir: Path) -> Path:
 def page_texts(reader: PdfReader) -> list[str]:
     """Every page's text, extracted once.
 
-    Two writers want the same read -- the bronze page stream and the per-
+    Two writers want the same read -- the page stream and the per-
     section Markdown -- and on a long document extracting twice is the most
     expensive thing an ingest could do for nothing.
     """

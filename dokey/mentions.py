@@ -128,9 +128,9 @@ def find(
 
 
 def write_mentions(output_dir: Path, mentions: list[Mention]) -> Path:
-    silver = Path(output_dir) / "silver"
-    silver.mkdir(parents=True, exist_ok=True)
-    path = silver / "mentions.jsonl"
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / "mentions.jsonl"
     with path.open("w", encoding="utf-8") as handle:
         for mention in mentions:
             handle.write(json.dumps(mention.as_dict(), ensure_ascii=False) + "\n")

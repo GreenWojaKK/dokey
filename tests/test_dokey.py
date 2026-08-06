@@ -102,10 +102,10 @@ class DokeyTests(unittest.TestCase):
                 "0",
             ])
 
-            sections_csv = output_dir / "silver" / "sections.csv"
-            sections_json = output_dir / "silver" / "sections.json"
-            sections_jsonl = output_dir / "silver" / "sections.jsonl"
-            self.assertTrue((output_dir / "raw" / "book.pdf").exists())
+            sections_csv = output_dir / "sections.csv"
+            sections_json = output_dir / "sections.json"
+            sections_jsonl = output_dir / "sections.jsonl"
+            self.assertTrue((output_dir / "book.pdf").exists())
             self.assertTrue(sections_csv.exists())
             self.assertTrue(sections_json.exists())
             self.assertTrue(sections_jsonl.exists())
@@ -156,7 +156,7 @@ class DokeyTests(unittest.TestCase):
         """
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = self._split_lake(Path(tmp), markdown=True)
-            by_section = output_dir / "artifacts" / "by_section"
+            by_section = output_dir / "by_section"
             pdfs = sorted(by_section.rglob("*.pdf"))
             markdowns = sorted(by_section.rglob("*.md"))
             self.assertEqual(len(pdfs), 5)
@@ -173,7 +173,7 @@ class DokeyTests(unittest.TestCase):
     def test_no_markdown_is_written_unless_it_is_asked_for(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = self._split_lake(Path(tmp), markdown=False)
-            by_section = output_dir / "artifacts" / "by_section"
+            by_section = output_dir / "by_section"
             self.assertTrue(list(by_section.rglob("*.pdf")))
             self.assertEqual(list(by_section.rglob("*.md")), [])
 
@@ -231,7 +231,7 @@ class DokeyTests(unittest.TestCase):
                 "0",
             ])
 
-            sections_csv = output_dir / "silver" / "sections.csv"
+            sections_csv = output_dir / "sections.csv"
             with sections_csv.open(encoding="utf-8-sig") as input_file:
                 rows = list(csv.DictReader(input_file))
 
@@ -328,17 +328,121 @@ SEARCH_PAGES = [
 
 
 def write_search_lake(lake: Path, with_pages: bool = True) -> None:
-    silver = lake / "silver"
-    silver.mkdir(parents=True, exist_ok=True)
-    with (silver / "sections.jsonl").open("w", encoding="utf-8") as output:
+    lake.mkdir(parents=True, exist_ok=True)
+    with (lake / "sections.jsonl").open("w", encoding="utf-8") as output:
         for row in SEARCH_SECTIONS:
             output.write(json.dumps(row) + "\n")
     if with_pages:
-        bronze = lake / "bronze"
-        bronze.mkdir(parents=True, exist_ok=True)
-        with (bronze / "pages.jsonl").open("w", encoding="utf-8") as output:
+        with (lake / "pages.jsonl").open("w", encoding="utf-8") as output:
             for row in SEARCH_PAGES:
                 output.write(json.dumps(row) + "\n")
+
+
+class MigrateTests(unittest.TestCase):
+    """A layered lake is moved to the flat layout, facts intact."""
+
+    @staticmethod
+    def _layered_lake(lake: Path) -> None:
+        """The old shape, exactly as an old ingest left it."""
+        (lake / "silver").mkdir(parents=True)
+        (lake / "bronze").mkdir()
+        (lake / "gold").mkdir()
+        (lake / "raw").mkdir()
+        (lake / "artifacts" / "by_section" / "001_A").mkdir(parents=True)
+        (lake / "artifacts" / "media").mkdir()
+
+        row = {
+            "index": 1,
+            "parent_index": 1,
+            "parent_item_index": 1,
+            "parent": "A",
+            "parent_folder": "001_A",
+            "title": "A",
+            "content_start_page": 1,
+            "content_end_page": 1,
+            "pdf_start_page": 1,
+            "pdf_end_page": 1,
+            "page_count": 1,
+            "output_file": str(
+                lake / "artifacts" / "by_section" / "001_A" / "001_A.pdf"
+            ),
+        }
+        (lake / "silver" / "sections.jsonl").write_text(
+            json.dumps(row, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+        (lake / "silver" / "sections.json").write_text(
+            json.dumps([row], ensure_ascii=False), encoding="utf-8"
+        )
+        (lake / "silver" / "objects.jsonl").write_text(
+            json.dumps({"kind": "image", "media": "artifacts/media/image1.png"})
+            + "\n",
+            encoding="utf-8",
+        )
+        (lake / "bronze" / "pages.jsonl").write_text(
+            '{"page": 1, "text": "orifice sizing"}\n', encoding="utf-8"
+        )
+        (lake / "bronze" / "md_ingest.json").write_text(
+            '{"source": "book.pdf"}\n', encoding="utf-8"
+        )
+        (lake / "gold" / "search.db").write_bytes(b"stale index")
+        (lake / "raw" / "book.pdf").write_bytes(b"%PDF-1.4\n")
+        (lake / "artifacts" / "by_section" / "001_A" / "001_A.pdf").write_bytes(
+            b"%PDF-1.4\n"
+        )
+        (lake / "artifacts" / "media" / "image1.png").write_bytes(b"\x89PNG")
+
+    def test_a_layered_lake_flattens_and_nothing_is_lost(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            lake = root / "book"
+            self._layered_lake(lake)
+
+            main(["migrate", str(root)])
+
+            # Every fact is at the root, under the flat names.
+            for name in (
+                "sections.jsonl",
+                "sections.json",
+                "objects.jsonl",
+                "pages.jsonl",
+                "ingest.json",  # md_ingest.json takes the one report name
+                "book.pdf",
+            ):
+                self.assertTrue((lake / name).exists(), name)
+            self.assertTrue((lake / "by_section" / "001_A" / "001_A.pdf").exists())
+            self.assertTrue((lake / "media" / "image1.png").exists())
+
+            # The layer folders are gone, and so is the derived index.
+            for folder in ("silver", "bronze", "gold", "raw", "artifacts"):
+                self.assertFalse((lake / folder).exists(), folder)
+            self.assertFalse((lake / "search.db").exists())
+
+            # The paths recorded inside the files point at the new places.
+            manifest = json.loads(
+                (lake / "sections.jsonl").read_text(encoding="utf-8")
+            )
+            self.assertNotIn("artifacts", manifest["output_file"])
+            self.assertTrue(Path(manifest["output_file"]).exists())
+            media_row = json.loads(
+                (lake / "objects.jsonl").read_text(encoding="utf-8")
+            )
+            self.assertEqual(media_row["media"], "media/image1.png")
+
+            # The migrated lake is a lake: found, indexed, searched.
+            self.assertEqual(searchlib.find_lakes(root), [lake])
+            searchlib.ensure_index(lake)
+            hits = searchlib.search(lake, "orifice")
+            self.assertEqual(len(hits), 1)
+
+    def test_migrating_a_flat_lake_changes_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            lake = Path(tmp)
+            write_search_lake(lake)
+            before = sorted(p.name for p in lake.iterdir())
+
+            main(["migrate", str(lake)])
+
+            self.assertEqual(sorted(p.name for p in lake.iterdir()), before)
 
 
 class SearchTests(unittest.TestCase):
@@ -352,7 +456,7 @@ class SearchTests(unittest.TestCase):
             self.assertEqual(stats.sections, 3)
             self.assertEqual(stats.pages, 6)
             self.assertTrue(stats.has_page_text)
-            self.assertTrue((lake / "gold" / "search.db").exists())
+            self.assertTrue((lake / "search.db").exists())
             self.assertFalse(searchlib.is_stale(lake))
 
     def test_search_maps_page_hits_to_sections(self) -> None:
@@ -408,7 +512,7 @@ class SearchTests(unittest.TestCase):
             write_search_lake(lake)
             searchlib.build_index(lake)
 
-            with (lake / "bronze" / "pages.jsonl").open("a", encoding="utf-8") as output:
+            with (lake / "pages.jsonl").open("a", encoding="utf-8") as output:
                 output.write(json.dumps({"page": 7, "text": "Appendix text."}) + "\n")
 
             self.assertTrue(searchlib.is_stale(lake))
@@ -440,7 +544,6 @@ class SearchTests(unittest.TestCase):
 
             rebuilt = (
                 lake
-                / "artifacts"
                 / "by_section"
                 / hit.parent_folder
                 / Path(hit.output_file).name
@@ -650,7 +753,7 @@ class SectionOverlapTests(unittest.TestCase):
                 "ingest", "--input", str(pdf_path), "--toc-from-outline",
                 "--output-dir", str(output_dir), "--no-page-text",
             ])
-            with (output_dir / "silver" / "sections.csv").open(encoding="utf-8-sig") as fh:
+            with (output_dir / "sections.csv").open(encoding="utf-8-sig") as fh:
                 rows = list(csv.DictReader(fh))
             # 1.1 (pdf 1) shares its boundary page 3 with 1.2 by default
             self.assertEqual(rows[0]["pdf_start_page"], "1")
@@ -723,7 +826,7 @@ class PrintedPageIndexTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             lake = Path(tmp) / "lake"
             write_search_lake(lake)
-            rows = searchlib._read_jsonl(lake / "silver" / "sections.jsonl")
+            rows = searchlib._read_jsonl(lake / "sections.jsonl")
             for row in rows:
                 row["printed_start_page"] = row["pdf_start_page"] + 100
                 row["printed_end_page"] = row["pdf_end_page"] + 100
@@ -2244,7 +2347,7 @@ class ConverterSeamTests(unittest.TestCase):
                         "--ingest", "--output-dir", str(lake),
                     ]
                 )
-                self.assertTrue((lake / "silver" / "sections.jsonl").exists())
+                self.assertTrue((lake / "sections.jsonl").exists())
             finally:
                 if previous is None:
                     os.environ.pop("DOKEY_CONFIG_DIR", None)
@@ -2302,7 +2405,7 @@ class ConverterSeamTests(unittest.TestCase):
 
                 # No --output-dir was given, so the default names itself.
                 lake = tmp_path / "dokey_out" / "book-docling"
-                self.assertTrue((lake / "silver" / "sections.jsonl").exists())
+                self.assertTrue((lake / "sections.jsonl").exists())
                 self.assertFalse((tmp_path / "dokey_out" / "book").exists())
                 # And the block stream is still found beside its own render.
                 self.assertTrue((tmp_path / "book-docling.json").exists())
@@ -2689,12 +2792,12 @@ class ConverterRegistryTests(unittest.TestCase):
                 main(["auto", str(source), "--output-dir", str(lake)])
                 rows = [
                     json.loads(line)
-                    for line in (lake / "silver" / "sections.jsonl")
+                    for line in (lake / "sections.jsonl")
                     .read_text(encoding="utf-8")
                     .splitlines()
                 ]
                 self.assertIn("1. 개요", {row["title"] for row in rows})
-                return (lake / "bronze" / "md_ingest.json").read_text(
+                return (lake / "ingest.json").read_text(
                     encoding="utf-8"
                 )
             finally:
@@ -2744,12 +2847,12 @@ class ConverterRegistryTests(unittest.TestCase):
                 )
                 rows = [
                     json.loads(line)
-                    for line in (lake / "silver" / "sections.jsonl")
+                    for line in (lake / "sections.jsonl")
                     .read_text(encoding="utf-8")
                     .splitlines()
                 ]
                 self.assertEqual([row["title"] for row in rows], ["점검"])
-                self.assertFalse((lake / "bronze" / "cells.jsonl").exists())
+                self.assertFalse((lake / "cells.jsonl").exists())
             finally:
                 if previous is None:
                     os.environ.pop("DOKEY_CONFIG_DIR", None)
@@ -2795,13 +2898,13 @@ class ConverterRegistryTests(unittest.TestCase):
                 )
                 rows = [
                     json.loads(line)
-                    for line in (lake / "silver" / "sections.jsonl")
+                    for line in (lake / "sections.jsonl")
                     .read_text(encoding="utf-8")
                     .splitlines()
                 ]
                 self.assertEqual([row["title"] for row in rows], ["시트하나"])
-                self.assertFalse((lake / "bronze" / "cells.jsonl").exists())
-                report = (lake / "bronze" / "md_ingest.json").read_text(
+                self.assertFalse((lake / "cells.jsonl").exists())
+                report = (lake / "ingest.json").read_text(
                     encoding="utf-8"
                 )
                 self.assertIn("not carried", report)
@@ -2833,7 +2936,7 @@ class ConverterRegistryTests(unittest.TestCase):
                         "--output-dir", str(lake),
                     ]
                 )
-                report = (lake / "bronze" / "md_ingest.json").read_text(
+                report = (lake / "ingest.json").read_text(
                     encoding="utf-8"
                 )
                 self.assertIn("markdown only", report)
@@ -3052,7 +3155,7 @@ class IngestTocFromPageOcrTests(unittest.TestCase):
             finally:
                 ocrmod.OcrClient = original
 
-            with (output_dir / "silver" / "sections.csv").open(encoding="utf-8-sig") as fh:
+            with (output_dir / "sections.csv").open(encoding="utf-8-sig") as fh:
                 titles = {row["title"] for row in csv.DictReader(fh)}
         self.assertIn("1.1 Alpha", titles)
         self.assertIn("2.1 Gamma", titles)
@@ -3263,11 +3366,11 @@ class AutoCommandTests(unittest.TestCase):
 
             rows = [
                 json.loads(line)
-                for line in (lake / "silver" / "sections.jsonl").read_text(
+                for line in (lake / "sections.jsonl").read_text(
                     encoding="utf-8"
                 ).splitlines()
             ]
-            self.assertTrue((lake / "gold" / "search.db").exists())
+            self.assertTrue((lake / "search.db").exists())
         by_title = {row["title"]: row for row in rows}
         self.assertIn("1.1 Alpha", by_title)
         self.assertIn("2.1 Gamma", by_title)
@@ -3300,7 +3403,7 @@ class AutoCommandTests(unittest.TestCase):
 
             rows = [
                 json.loads(line)
-                for line in (lake / "silver" / "sections.jsonl").read_text(
+                for line in (lake / "sections.jsonl").read_text(
                     encoding="utf-8"
                 ).splitlines()
             ]
@@ -3324,7 +3427,7 @@ class AutoCommandTests(unittest.TestCase):
 
             rows = [
                 json.loads(line)
-                for line in (lake / "silver" / "sections.jsonl").read_text(
+                for line in (lake / "sections.jsonl").read_text(
                     encoding="utf-8"
                 ).splitlines()
             ]
@@ -3886,7 +3989,7 @@ class SpreadsheetTests(unittest.TestCase):
                     "_ext": (952500, 952500),
                     "_crop": {"l": 0.25, "t": 0.1, "r": 0.25, "b": 0.2},
                     "_rot": 90,
-                    "media": "artifacts/media/image1.png",
+                    "media": "media/image1.png",
                 }
             ]
         )
@@ -3914,7 +4017,7 @@ class SpreadsheetTests(unittest.TestCase):
                 "_off": (offset, 0),
                 "_ext": (952500, 952500),
                 "_crop": {"l": 0.1, "t": 0, "r": 0.1, "b": 0},
-                "media": f"artifacts/media/image{index}.png",
+                "media": f"media/image{index}.png",
             }
             for index, offset in enumerate((0, 952500), start=1)
         ]
@@ -3924,6 +4027,31 @@ class SpreadsheetTests(unittest.TestCase):
         self.assertIn('clip-path="url(#crop0)"', svg)
         self.assertIn('id="crop1"', svg)
         self.assertIn('clip-path="url(#crop1)"', svg)
+
+    def test_a_shape_keeps_its_rotation_and_mirrors(self) -> None:
+        from dokey import sheetdraw
+
+        svg, drawn, boxed = sheetdraw.figure_svg(
+            [
+                {
+                    "_off": (0, 0),
+                    "_ext": (952500, 476250),
+                    "_rot": 270,
+                    "_flip_h": True,
+                    "_flip_v": True,
+                    "kind": "shape",
+                    "shape": "curvedConnector2",
+                }
+            ]
+        )
+
+        self.assertIn(
+            'transform="translate(50.0 25.0) rotate(270) '
+            'scale(-1 -1) translate(-50.0 -25.0)"',
+            svg,
+        )
+        self.assertIn('<path d="M 0.0,0.0 Q 100.0,0.0 100.0,50.0"', svg)
+        self.assertEqual((drawn, boxed), (1, 0))
 
     def test_bitmap_crop_returns_the_pixels_inside_the_sheet_window(self) -> None:
         from PIL import Image
@@ -3997,7 +4125,7 @@ class SpreadsheetTests(unittest.TestCase):
         images = [row for row in read.objects if row["kind"] == "image"]
         self.assertEqual(
             [row["media"] for row in images],
-            ["artifacts/media/image1.png", "artifacts/media/image1_2.png"],
+            ["media/image1.png", "media/image1_2.png"],
         )
         self.assertTrue(all(row["_crop_applied"] for row in images))
         sizes = []
@@ -4069,7 +4197,7 @@ class SpreadsheetTests(unittest.TestCase):
         # A picture is opaque: bytes and an anchor, content deferred.
         image = by_kind["image"]
         self.assertEqual(image["anchor_ref"], "A10")
-        self.assertEqual(image["media"], "artifacts/media/image1.png")
+        self.assertEqual(image["media"], "media/image1.png")
         self.assertIn("image1.png", read.media)
         # A text box is content anchored to the grid.
         self.assertEqual(by_kind["shape"]["text"], "결재란")
@@ -4420,7 +4548,7 @@ class SpreadsheetTests(unittest.TestCase):
 
             rows = [
                 json.loads(line)
-                for line in (lake / "silver" / "sheet_figures.jsonl")
+                for line in (lake / "sheet_figures.jsonl")
                 .read_text(encoding="utf-8")
                 .splitlines()
                 if line.strip()
@@ -4438,12 +4566,12 @@ class SpreadsheetTests(unittest.TestCase):
 
             main(["auto", str(book), "--output-dir", str(lake)])
 
-            self.assertTrue((lake / "silver" / "sections.jsonl").exists())
-            cells = (lake / "bronze" / "cells.jsonl").read_text(encoding="utf-8")
+            self.assertTrue((lake / "sections.jsonl").exists())
+            cells = (lake / "cells.jsonl").read_text(encoding="utf-8")
             self.assertIn('"ref": "B2"', cells)
-            objects = (lake / "silver" / "objects.jsonl").read_text(encoding="utf-8")
+            objects = (lake / "objects.jsonl").read_text(encoding="utf-8")
             self.assertIn("'점검'!$C$2:$C$3", objects)
-            self.assertTrue((lake / "artifacts" / "media" / "image1.png").exists())
+            self.assertTrue((lake / "media" / "image1.png").exists())
 
     def test_the_converter_is_only_for_formats_no_reader_opens(self) -> None:
         from dokey import sheets
@@ -4564,7 +4692,7 @@ class DriftSmokeTestTests(unittest.TestCase):
 
             rows = [
                 json.loads(line)
-                for line in (lake / "silver" / "sections.jsonl").read_text(
+                for line in (lake / "sections.jsonl").read_text(
                     encoding="utf-8"
                 ).splitlines()
             ]
@@ -5699,7 +5827,7 @@ class ArtifactNamingTests(unittest.TestCase):
     def paths(self, sections) -> list[str]:
         ranges = mdunit.build_section_ranges(sections, Path("lake"))
         return [
-            str(Path(row.output_file).relative_to(Path("lake") / "artifacts" / "by_section"))
+            str(Path(row.output_file).relative_to(Path("lake") / "by_section"))
             for row in ranges
         ]
 
@@ -5742,7 +5870,7 @@ class ArtifactNamingTests(unittest.TestCase):
             max_content_page=None,
         )
         names = [
-            str(Path(row.output_file).relative_to(Path("lake") / "artifacts" / "by_section"))
+            str(Path(row.output_file).relative_to(Path("lake") / "by_section"))
             for row in ranges
         ]
         self.assertEqual(
@@ -5763,7 +5891,7 @@ class MarkdownIngestCliTests(unittest.TestCase):
 
             rows = [
                 json.loads(line)
-                for line in (lake / "silver" / "sections.jsonl").read_text(
+                for line in (lake / "sections.jsonl").read_text(
                     encoding="utf-8"
                 ).splitlines()
             ]
@@ -5772,7 +5900,7 @@ class MarkdownIngestCliTests(unittest.TestCase):
 
             outline = [
                 json.loads(line)
-                for line in (lake / "silver" / "toc.jsonl")
+                for line in (lake / "toc.jsonl")
                 .read_text(encoding="utf-8")
                 .splitlines()
             ]
@@ -5781,7 +5909,7 @@ class MarkdownIngestCliTests(unittest.TestCase):
             self.assertEqual(outline[2]["page"], 3)
 
             report = json.loads(
-                (lake / "bronze" / "md_ingest.json").read_text(encoding="utf-8")
+                (lake / "ingest.json").read_text(encoding="utf-8")
             )
             self.assertEqual(report["profile"], "ko")
             self.assertTrue(report["derived_levels"])
@@ -5792,7 +5920,7 @@ class MarkdownIngestCliTests(unittest.TestCase):
 
             pages = [
                 json.loads(line)
-                for line in (lake / "bronze" / "pages.jsonl").read_text(
+                for line in (lake / "pages.jsonl").read_text(
                     encoding="utf-8"
                 ).splitlines()
             ]
@@ -5816,7 +5944,7 @@ class MarkdownIngestCliTests(unittest.TestCase):
             )
             titles = [
                 json.loads(line)["title"]
-                for line in (lake / "silver" / "sections.jsonl").read_text(
+                for line in (lake / "sections.jsonl").read_text(
                     encoding="utf-8"
                 ).splitlines()
             ]

@@ -17,7 +17,7 @@ from .. import search as searchlib
 from ..manifest import write_manifests, write_toc
 from ..models import TocEntry
 from ..pdf import (
-    copy_raw_pdf,
+    copy_source_document,
     page_texts,
     write_pages_jsonl,
     write_section_markdown,
@@ -31,11 +31,11 @@ def _reset_section_artifacts(output_dir: Path) -> None:
 
     Artifact filenames are stable, so a re-ingest overwrites same-named files;
     but a section that was removed or renamed would otherwise leave an orphan
-    behind. Wiping ``artifacts/by_section`` first keeps the tree an exact mirror
+    behind. Wiping ``by_section`` first keeps the tree an exact mirror
     of the current manifest. The manifests, page text, and index are all
     rewritten (or atomically replaced) in place, so only this tree accumulates.
     """
-    by_section = output_dir / "artifacts" / "by_section"
+    by_section = output_dir / "by_section"
     if by_section.exists():
         shutil.rmtree(by_section)
 
@@ -73,13 +73,13 @@ def ingest_entries(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if not no_raw_copy:
-        raw_path = copy_raw_pdf(input_path, output_dir)
-        print(f"Wrote raw PDF: {raw_path}")
+        raw_path = copy_source_document(input_path, output_dir)
+        print(f"Copied source PDF: {raw_path}")
 
     texts = page_texts(reader) if (not no_page_text or write_markdown) else None
 
     if not no_page_text:
-        pages_path = output_dir / "bronze" / "pages.jsonl"
+        pages_path = output_dir / "pages.jsonl"
         write_pages_jsonl(reader, pages_path, texts=texts)
         print(f"Wrote page text: {pages_path}")
 
@@ -96,7 +96,7 @@ def ingest_entries(
     if not no_pdf_artifacts:
         _reset_section_artifacts(output_dir)
         write_split_pdfs(reader, ranges)
-        print(f"Wrote split PDFs: {output_dir / 'artifacts' / 'by_section'}")
+        print(f"Wrote split PDFs: {output_dir / 'by_section'}")
     else:
         print("Skipped split PDF artifacts.")
 
@@ -104,7 +104,7 @@ def ingest_entries(
         if no_pdf_artifacts:
             _reset_section_artifacts(output_dir)
         write_section_markdown(ranges, texts)
-        print(f"Wrote section Markdown: {output_dir / 'artifacts' / 'by_section'}")
+        print(f"Wrote section Markdown: {output_dir / 'by_section'}")
 
     print(f"Ingested {len(ranges)} sections from {len(entries)} TOC entries.")
     return len(ranges)
@@ -131,8 +131,8 @@ def _write_document_name(output_dir: Path, source: Path) -> None:
 
 
 def _write_section_pages(sections: list, output_dir: Path) -> Path:
-    """One synthetic bronze page per section: its sequence number and text."""
-    pages_path = output_dir / "bronze" / "pages.jsonl"
+    """One synthetic page per section: its sequence number and text."""
+    pages_path = output_dir / "pages.jsonl"
     pages_path.parent.mkdir(parents=True, exist_ok=True)
     with pages_path.open("w", encoding="utf-8") as output:
         for section in sections:
@@ -195,8 +195,11 @@ def _write_unitize_report(
     the record: counts, the marks themselves, and the ingest's known defects.
     Which converter produced the render is part of how the sections were
     decided, so it is recorded here too -- as provenance, not as a defect.
+
+    One report name for every route: which route decided the sections shows
+    in the report's own keys, not in what the file is called.
     """
-    path = output_dir / "bronze" / "md_ingest.json"
+    path = output_dir / "ingest.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {"source": input_path.name, **report.as_dict()}
     if provenance:
@@ -214,7 +217,7 @@ def _write_page_texts(rows: list[dict], output_dir: Path) -> Path:
     search index reads is the page's content without the running header -- a
     distinction the Markdown path has to infer and this one is told.
     """
-    path = output_dir / "bronze" / "pages.jsonl"
+    path = output_dir / "pages.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as output:
         for row in rows:
@@ -288,8 +291,8 @@ def _ingest_markdown(
     ranges = mdunit.build_section_ranges(sections, output_dir, pages)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    raw_path = copy_raw_pdf(input_path, output_dir)  # copies any file under raw/
-    print(f"Wrote raw {source_label}: {raw_path}")
+    raw_path = copy_source_document(input_path, output_dir)
+    print(f"Copied source {source_label}: {raw_path}")
 
     if pages is not None:
         pages_path = _write_page_texts(blockslib.page_texts(blocks), output_dir)
@@ -360,7 +363,7 @@ def _finish_lake(sections: list, ranges: list, output_dir: Path) -> None:
 
     _reset_section_artifacts(output_dir)
     _write_section_artifacts(sections, ranges, output_dir)
-    print(f"Wrote section Markdown: {output_dir / 'artifacts' / 'by_section'}")
+    print(f"Wrote section Markdown: {output_dir / 'by_section'}")
 
     stats = searchlib.ensure_index(output_dir)
     print(
@@ -388,8 +391,8 @@ def _write_sections_lake(
     ranges = mdunit.build_section_ranges(sections, output_dir, None)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    raw_path = copy_raw_pdf(input_path, output_dir)  # copies any file under raw/
-    print(f"Wrote raw {source_label}: {raw_path}")
+    raw_path = copy_source_document(input_path, output_dir)
+    print(f"Copied source {source_label}: {raw_path}")
 
     pages_path = _write_section_pages(sections, output_dir)
     print(f"Wrote section text: {pages_path}")
@@ -399,7 +402,7 @@ def _write_sections_lake(
     print(f"Wrote table of contents: {toc_path} ({len(outline)} entries)")
 
     if extra_report:
-        report_path = output_dir / "bronze" / "ingest.json"
+        report_path = output_dir / "ingest.json"
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(
             json.dumps(

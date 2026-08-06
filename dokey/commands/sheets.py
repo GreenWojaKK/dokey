@@ -152,9 +152,9 @@ def _finish_sheet_lake(
 ) -> None:
     """Write a directly-read workbook's lake, evidence layers included.
 
-    The cells go to bronze under their own references -- the record the
+    The cells are kept under their own references -- the record the
     rendered sections can be checked against -- and what the workbook
-    declares about its objects goes to silver with its anchors. Media bytes
+    declares about its objects is kept with its anchors. Media bytes
     are carried as they are; reading a picture is a VLM's job, not this one's.
     """
     if not read.sections:

@@ -48,26 +48,34 @@ class SectionHit:
 
 
 def index_path(lake: Path) -> Path:
-    return lake / "gold" / "search.db"
+    return lake / "search.db"
 
 
 def find_lakes(root: Path) -> list[Path]:
-    """Directories under root (depth <= 2) that contain silver/sections.jsonl."""
+    """Directories under root (depth <= 2) that contain sections.jsonl.
+
+    The manifest is the marker because it is the one file every lake has:
+    a lake is flat, so the marker sits at its root.
+    """
     found = set()
-    if (root / "silver" / "sections.jsonl").exists():
+    if (root / "sections.jsonl").exists():
         found.add(root)
-    for pattern in ("*/silver/sections.jsonl", "*/*/silver/sections.jsonl"):
+    for pattern in ("*/sections.jsonl", "*/*/sections.jsonl"):
         for manifest in root.glob(pattern):
-            found.add(manifest.parent.parent)
+            # A sections.jsonl inside a silver/ folder is an unmigrated
+            # layered lake showing through, not a flat lake called "silver";
+            # `dokey migrate` is the answer there.
+            if manifest.parent.name != "silver":
+                found.add(manifest.parent)
     return sorted(found)
 
 
 def _sections_path(lake: Path) -> Path:
-    return lake / "silver" / "sections.jsonl"
+    return lake / "sections.jsonl"
 
 
 def _pages_path(lake: Path) -> Path:
-    return lake / "bronze" / "pages.jsonl"
+    return lake / "pages.jsonl"
 
 
 def _fingerprint(lake: Path) -> str:
@@ -363,7 +371,7 @@ def resolve_artifact(lake: Path, hit: SectionHit) -> Path | None:
     recorded = Path(hit.output_file)
     if recorded.exists():
         return recorded
-    rebuilt = lake / "artifacts" / "by_section" / hit.parent_folder / recorded.name
+    rebuilt = lake / "by_section" / hit.parent_folder / recorded.name
     if rebuilt.exists():
         return rebuilt
     return None

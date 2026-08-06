@@ -125,7 +125,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-items",
         action="store_true",
         help=(
-            "Skip silver/items.jsonl, the section text cut along the document's "
+            "Skip items.jsonl, the section text cut along the document's "
             "own numbering ladder (4.1 (1) (가)). Written by default."
         ),
     )
@@ -336,7 +336,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-items",
         action="store_true",
         help=(
-            "Skip silver/items.jsonl, the section text cut along the document's "
+            "Skip items.jsonl, the section text cut along the document's "
             "own numbering ladder (4.1 (1) (가)). Written by default."
         ),
     )
@@ -349,7 +349,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     split = subparsers.add_parser(
         "ingest",
-        help="Create raw, bronze, silver, and artifact outputs from a PDF and TOC.",
+        help="Create the lake outputs (manifest, page text, split PDFs) from a PDF and TOC.",
     )
     split.add_argument("--input", type=Path, required=True, help="Input PDF path.")
     split.add_argument(
@@ -472,7 +472,7 @@ def build_parser() -> argparse.ArgumentParser:
     split.add_argument(
         "--no-page-text",
         action="store_true",
-        help="Do not extract bronze/pages.jsonl.",
+        help="Do not extract pages.jsonl.",
     )
     split.add_argument(
         "--no-pdf-artifacts",
@@ -490,7 +490,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     index = subparsers.add_parser(
         "index",
-        help="Build or refresh the full-text search index under gold/.",
+        help="Build or refresh the full-text search index (search.db).",
     )
     index.add_argument("--lake", type=Path, help="Lake directory from a previous ingest.")
     index.add_argument(
@@ -577,7 +577,7 @@ def build_parser() -> argparse.ArgumentParser:
     folios.add_argument(
         "--rebuild",
         action="store_true",
-        help="Ignore any cached gold/folios.jsonl and re-OCR.",
+        help="Ignore any cached folio reads and re-OCR.",
     )
 
     backend = subparsers.add_parser(
@@ -681,4 +681,22 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.5,
         help="Route to OCR when at least this fraction of pages look scanned. Default: 0.5.",
     )
+    migrate = subparsers.add_parser(
+        "migrate",
+        help=(
+            "Move a layered lake (raw/bronze/silver/gold/artifacts) to the "
+            "flat layout. One-time; re-ingesting also produces the flat shape."
+        ),
+    )
+    migrate.add_argument(
+        "path",
+        type=Path,
+        nargs="?",
+        default=Path("."),
+        help=(
+            "A lake, or a directory holding lakes (searched two levels deep). "
+            "Default: the current directory."
+        ),
+    )
+
     return parser

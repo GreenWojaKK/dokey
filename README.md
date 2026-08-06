@@ -6,31 +6,28 @@ The first target workflow is RAG ingestion: avoid sending a full 700-page PDF to
 
 ## Outputs
 
-An ingest run creates this shape:
+An ingest run creates this shape — a **flat** lake, every file at the root:
 
 ```text
 lake/
-  raw/
-    original.pdf
-  bronze/
-    pages.jsonl
-  silver/
-    toc.jsonl
-    items.jsonl
-    sections.csv
-    sections.json
-    sections.jsonl
-  gold/
-    search.db
-  artifacts/
-    by_section/
-      Front_Matter.pdf            # a top-level section
-      Front_Matter.md             # …and the same section as text, with --markdown
-      Front_Matter/               # …and its children, if it has any
-        Editors_Corner.pdf
+  original.pdf                    # the source, under its own name
+  pages.jsonl                     # page text, one row per page
+  toc.jsonl                       # the outline the ingest worked from
+  sections.csv / .json / .jsonl   # the section manifest (the contract)
+  items.jsonl                     # addressed items, for Markdown inputs
+  ingest.json                     # what was read, dropped, and decided
+  search.db                       # full-text index (derived)
+  by_section/
+    Front_Matter.pdf              # a top-level section
+    Front_Matter.md               # …and the same section as text, with --markdown
+    Front_Matter/                 # …and its children, if it has any
+      Editors_Corner.pdf
+  media/                          # figures and pictures, where a source has them
 ```
 
-`silver/sections.*` is the main contract. PDF files under `artifacts/` are derived artifacts. `gold/search.db` is the derived full-text search index, created by `dokey index` or on first `dokey search`.
+`sections.*` is the main contract, and `sections.jsonl` at the lake root is
+what marks a directory as a lake. `search.db` is the derived full-text search
+index, created by `dokey index` or on first `dokey search`.
 
 Splitting a PDF yields PDFs. `--markdown` (a toggle in the app) keeps the same
 sections as text as well — one `.md` beside each split PDF, cut from the text
@@ -38,7 +35,7 @@ dokey already read, so it needs no converter and costs no second pass. Inputs
 that are not paged — Markdown, HWP, flow documents, spreadsheets — have no
 split PDFs and get these Markdown artifacts as their only per-section files.
 
-`silver/toc.jsonl` is the outline the ingest worked from — the embedded PDF
+`toc.jsonl` is the outline the ingest worked from — the embedded PDF
 outline, the printed contents page, the document's own numbered headings, or
 (for a render) those headings after the sweep described below. Every ingest
 establishes it first and splits from it, so it is the record of how the
@@ -77,7 +74,7 @@ of tables** after the contents is set in the same two columns under the same
 running head; what separates the two is what the rows name — an object inside
 the text (`<표 2-1>`) rather than a division of it.
 
-`silver/items.jsonl` goes one level finer, for Markdown inputs. A section is
+`items.jsonl` goes one level finer, for Markdown inputs. A section is
 the unit a reader cites, but it is not the unit a document *addresses*: a
 technical standard addresses a passage by a ladder of numbering series
 (`4.1` → `(1)` → `(가)` → `①`), and anything reading the text for its content —
@@ -91,7 +88,7 @@ bound the whole range and `char_own_end` bounds the item's own words. A rung
 the document skips is counted, never invented. Turn the file off with
 `--no-items`.
 
-`silver/figures.jsonl` says **which caption names which figure**. A caption is a
+`figures.jsonl` says **which caption names which figure**. A caption is a
 sentence that belongs to something other than itself, and the something is above
 it or below it — which one is a *convention*, not a fact of layout. Measured over
 866 Korean technical standards: a figure's caption sits below it (2,400 pairs
@@ -112,7 +109,7 @@ figures simply have no caption. Note the division of labour — whether a block
 *is* a caption is the converter's call (a lexical judgement); dokey only decides
 what it points at (a geometric one).
 
-`silver/mentions.jsonl` records **where a tag-shaped identifier occurs**, with
+`mentions.jsonl` records **where a tag-shaped identifier occurs**, with
 the address of the passage it occurs in. A plant's documents are held together
 by tags: `T-101` is a tank, and the sentence saying it was damaged, the sheet
 listing its material and the quotation pricing its repair share nothing else —
@@ -131,7 +128,7 @@ equipment tags (`P-110`). Separating those needs a plant's tag registry, which
 dokey does not have. What it can do for free is corroborate: a tag the document
 is *named* for and also mentions is marked `in_document_name`.
 
-`silver/document.json` records what the document's **own filename** states. In
+`document.json` records what the document's **own filename** states. In
 the corpus this was built for, the filename is not decoration — it is where the
 metadata lives: `20240315_부서명_T-101_설비명_사건_문서종류_rev1.2.xlsx`
 gives a date, an owning department, an equipment tag, the equipment's name and
@@ -177,7 +174,7 @@ Smoke test: 28/28 section starts verified, 0 corrected, 0 interpolated
 Section overlap: 0 (28/28 clean starts — sections start on fresh pages)
 ...
 Ingested 28 sections from 28 TOC entries.
-Search index: dokey_out\...\gold\search.db (28 sections, 613 pages)
+Search index: dokey_out\...\search.db (28 sections, 613 pages)
 ```
 
 The recognition is deliberately lexical — no LLM:
@@ -285,9 +282,9 @@ Useful flags:
 --section-overlap N    Extend each section N pages into the next; default 1
                        (keeps a section complete when it shares a boundary
                        page with the next; use 0 for strict non-overlap)
---no-page-text         Skip bronze/pages.jsonl
+--no-page-text         Skip pages.jsonl
 --no-pdf-artifacts     Write only manifests, no split PDFs
---no-raw-copy          Do not copy source PDF under raw/
+--no-raw-copy          Do not copy the source PDF into the lake
 --toc-from-outline     Use PDF bookmarks/outline instead of a TOC file
 --outline-max-level N  Deepest outline level to use; default is 1
 ```
@@ -380,7 +377,7 @@ renders of Korean technical standards:
   the two are rejoined into `1. 목적` (150 such pairs in the measured corpus)
   rather than left as a truncated title and a stray line.
 
-Every removal is recorded in `bronze/md_ingest.json` — counts, the marks
+Every removal is recorded in `ingest.json` — counts, the marks
 themselves, and the ingest's known defects — because dropping lines without a
 record is indistinguishable from losing them.
 
@@ -517,7 +514,7 @@ scan through a markdown-only tool) is refused in so many words, not silently
 replaced. `dokey convert` with no input lists everything found and what each
 keeps.
 Each ingest records which converter produced the render (`converted_by` in
-`bronze/md_ingest.json`), the way a table records what proved its header. A
+`ingest.json`), the way a table records what proved its header. A
 scanned PDF still requires a converter that reconstructs pages: a
 markdown-only tool would read the empty text layer and return silence.
 
@@ -568,7 +565,7 @@ The reading order follows what depends on what:
 
 **1 — The coordinate space, kept.** One sheet is one section and its page
 number is its own — sheet 2 really is page 2. Every cell is recorded under its
-own reference in `bronze/cells.jsonl` (value, type, formula if written, merge
+own reference in `cells.jsonl` (value, type, formula if written, merge
 range if declared), which is what makes the rendered sections *checkable*, the
 way `items.jsonl`'s character offsets make prose checkable. Trimming empty
 columns and collapsing the padding inside a merged label (`상   호` is not a
@@ -590,11 +587,11 @@ which basis decided each table (`types`, `converter`, `position`).
 
 **3 — What the workbook declares about its objects.** A drawing states the
 cell it is anchored to, and a chart states **which cells it plots** — so
-`silver/objects.jsonl` carries each chart with its title and its data ranges
+`objects.jsonl` carries each chart with its title and its data ranges
 (`'점검'!$C$2:$C$3`), each text box with its words, and each picture with its
 anchor. A chart is not an image: rendering it to pixels and reading it back
 would destroy a statement the file already makes. Pictures are the one truly
-opaque payload, so their bytes go to `artifacts/media/` with their anchors
+opaque payload, so their bytes go to `media/` with their anchors
 kept, and reading them is deferred to a BYO VLM — the same arm's-length seam
 as everywhere else. (`xlrd` does not expose drawings, so a legacy workbook
 says so in its notes rather than staying silent.)
@@ -604,7 +601,7 @@ outline, the level inside it, the leader lines, the labels — is thirty shapes
 in the file and one drawing to the eye, and reading it part by part loses the
 only thing that made it legible. PowerPoint would call it a group, and where
 the author made one the file says so: a grouped drawing arrives as a single
-anchor. Nobody groups them. So `silver/sheet_figures.jsonl` assembles them:
+anchor. Nobody groups them. So `sheet_figures.jsonl` assembles them:
 parts whose cell spans touch belong to the same figure, and each row carries
 the figure's span, how many parts it has, the shapes it is made of by the
 file's own names for their forms (`flowChartMagneticDisk`,
@@ -637,7 +634,7 @@ that was never cut is named for its cells alone, as before.
 
 A figure that exists only as a list of parts still cannot be *looked* at, by
 a person or by a model, so each one is drawn back out to
-`artifacts/media/figure_<sheet>_<span>.svg` and named on its row. This is
+`media/figure_<sheet>_<span>.svg` and named on its row. This is
 transcription, not rendering: every part states its position and size on the
 sheet's own canvas, a custom form states its path outright, and fills, shaded
 stops and outlines are all stated too, so the drawing is put back together
@@ -686,7 +683,7 @@ Unlike a PDF, an HWP document has no intrinsic pages, so the unit is the
 parent is the nearest shallower heading, and its body is the text up to the next
 heading. Each section is given one synthetic page so the manifest, index, and
 full-text search all work exactly as for a PDF. Per-section artifacts are
-Markdown files under `artifacts/by_section/` rather than split PDFs.
+Markdown files under `by_section/` rather than split PDFs.
 
 ## Text vs Scanned PDFs
 
@@ -714,7 +711,7 @@ the optional `[ocr]` extra (PyMuPDF).
 
 ## Search
 
-Build the index (SQLite FTS5, standard library only, stored at `gold/search.db`):
+Build the index (SQLite FTS5, standard library only, stored at `search.db`):
 
 ```powershell
 dokey index --lake dokey_out\report
@@ -730,7 +727,7 @@ dokey search "valve OR actuator" --lake dokey_out\report --limit 5
 Notes:
 
 - `--lake` may be omitted when exactly one lake exists under the current directory.
-- The index is rebuilt automatically when `silver/sections.jsonl` or `bronze/pages.jsonl` changed; force with `--rebuild`.
+- The index is rebuilt automatically when `sections.jsonl` or `pages.jsonl` changed; force with `--rebuild`.
 - FTS5 query syntax (`AND`, `OR`, `NOT`, `"phrase"`, `term*`) is passed through; queries that fail to parse fall back to plain quoted terms.
 - Section title matches are boosted above page-text matches.
 - Lakes ingested with `--no-page-text` are searchable by section title only.
@@ -835,7 +832,7 @@ Two sources, selected with `--source` (default `auto`):
   optional extra: `python -m pip install -e .[ocr]`.
 
 `auto` uses the text TOC when one is found and falls back to OCR otherwise. The
-original manifest is backed up once to `silver/sections.prefolio.jsonl`.
+original manifest is backed up once to `sections.prefolio.jsonl`.
 
 ## TOC Formats
 
